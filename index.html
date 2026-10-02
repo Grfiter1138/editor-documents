@@ -93,6 +93,16 @@
     .img-item img { width: 56px; height: 56px; }
     input[type=range] { height: 28px; }
   }
+  .event-box { margin-top: 6px; padding: 10px; border-radius: 8px; background: #f5f8ff; border: 1px solid #d6e2fb; }
+  .event-box input.ev-date { width: 110px; }
+  .event-box input.ev-time { width: 70px; }
+  .event-box label.hint { display: inline-flex; align-items: center; gap: 6px; }
+  .hint.ev-msg { color: var(--danger); }
+  .page .toc { margin: 6pt 0 0; }
+  .page .toc-title { font-family: var(--head-font); font-size: var(--h1-size); color: var(--accent); font-weight: 700; margin: 12pt 0 8pt; }
+  .page .toc-item { margin: 0 0 4pt 0.5cm; }
+  .page .page-break { border-top: 1px dashed #b8b8b8; margin: 18pt -1cm; text-align: center; font-size: 8pt; color: #a0a0a0; font-family: sans-serif; line-height: 0; }
+  .page .page-break span { background: #fff; padding: 0 8px; }
   .share-actions { display: flex; flex-direction: column; gap: 10px; }
   .share-actions button { padding: 12px; font-size: 16px; }
 
@@ -251,15 +261,19 @@
   const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   const newPara = () => ({ id: uid(), text: '', images: [] });
-  const newSection = () => ({ id: uid(), title: '', paragraphs: [newPara()] });
+  const newEvent = () => ({ enabled: false, kind: 'evento', date: '', time: '', includeText: false, alert: '15' });
+  const newSection = () => ({ id: uid(), title: '', paragraphs: [newPara()], event: newEvent() });
+  const newToc = () => ({ enabled: false, title: 'Indice' });
   const newHF = () => ({ enabled: false, scope: 'all', text: '', textAlign: 'center', boldFirst: true, line: true, image: null });
   const newPageNumbers = () => ({ enabled: false, format: 'pagina-di', align: 'center' });
   const defaultDoc = () => ({
     title: '', subtitle: '', sections: [newSection()],
-    letterhead: newHF(), footer: newHF(), pageNumbers: newPageNumbers(), style: newStyle(),
+    letterhead: newHF(), footer: newHF(), pageNumbers: newPageNumbers(), style: newStyle(), toc: newToc(),
   });
   // Completa i progetti salvati con versioni precedenti del programma
   function withDefaults(d) {
+    d.toc = { ...newToc(), ...(d.toc || {}) };
+    (d.sections || []).forEach(sec => { sec.event = { ...newEvent(), ...(sec.event || {}) }; });
     d.letterhead = { ...newHF(), ...(d.letterhead || {}) };
     d.footer = { ...newHF(), ...(d.footer || {}) };
     d.pageNumbers = { ...newPageNumbers(), ...(d.pageNumbers || {}) };
@@ -436,6 +450,37 @@
     </div>`;
   }
 
+  function eventBox(s) {
+    const ev = s.event, a = `data-s="${s.id}"`;
+    const head = `<div class="row" style="margin-top:8px">
+        <label class="hint"><input type="checkbox" data-f="evOn" ${a} ${ev.enabled ? 'checked' : ''}> 📅 Crea un evento o un promemoria</label>
+      </div>`;
+    if (!ev.enabled) return head;
+    const isRem = ev.kind === 'promemoria';
+    const remNote = isRem && IS_IOS ? `<div class="hint ev-msg" style="margin-top:6px">Il promemoria si può creare solo sul Mac, con Editor Documenti.app. Qui puoi creare un evento.</div>` : '';
+    return head + `<div class="event-box">
+      <div class="row">
+        ${segBtns([['evento', '📅 Evento in Calendario'], ['promemoria', '🔔 Promemoria']], ev.kind, 'evKind', a)}
+      </div>
+      <div class="row">
+        <label class="hint">Data <input type="text" inputmode="numeric" class="ev-date" data-f="evDate" ${a} value="${esc(ev.date)}" placeholder="gg/mm/aaaa" maxlength="10"></label>
+        <label class="hint">Ora <input type="text" inputmode="numeric" class="ev-time" data-f="evTime" ${a} value="${esc(ev.time)}" placeholder="00:00" maxlength="5"></label>
+        <label class="hint">Avviso <select data-f="evAlert" ${a}>
+          ${[['none', 'Nessuno'], ['0', "All'ora dell'evento"], ['15', '15 minuti prima'], ['60', '1 ora prima'], ['1440', '1 giorno prima']]
+            .map(([v, l]) => `<option value="${v}" ${ev.alert === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select></label>
+      </div>
+      <div class="row">
+        <label class="hint"><input type="checkbox" data-f="evText" ${a} ${ev.includeText ? 'checked' : ''}> Riporta il testo dei paragrafi nelle note ${isRem ? 'del promemoria' : "dell'evento"}</label>
+      </div>
+      <div class="row">
+        <button class="small primary" data-act="evAdd" ${a}>${isRem ? '🔔 Aggiungi ai Promemoria' : '📅 Aggiungi al Calendario'}</button>
+        ${!isRem && !IS_IOS ? `<button class="small" data-act="evExport" ${a} title="Per aggiungerlo da un altro computer o telefono">Scarica file .ics</button>` : ''}
+        <span class="hint ev-msg" id="evmsg-${s.id}">${esc(eventProblem(s) || '')}</span>
+      </div>${remNote}
+    </div>`;
+  }
+
   function pageNumbersCard() {
     const pn = state.pageNumbers;
     return `<div class="card">
@@ -500,6 +545,14 @@
         <div style="height:8px"></div>
         <label class="lbl">Sottotitolo / riga descrittiva (facoltativa)</label>
         <input type="text" data-f="subtitle" value="${esc(state.subtitle)}" placeholder="Es. Autore, data, reparto…">
+        <div class="row" style="margin-top:10px">
+          <label class="hint"><input type="checkbox" data-f="tocOn" ${state.toc.enabled ? 'checked' : ''}> Crea un indice dei sottotitoli nella prima pagina</label>
+        </div>
+        ${state.toc.enabled ? `<div class="row">
+          <span class="hint">Titolo dell'indice:</span>
+          <input type="text" class="grow" data-f="tocTitle" value="${esc(state.toc.title)}" placeholder="Indice">
+        </div>
+        <div class="hint" style="margin-top:4px">I sottotitoli e i paragrafi inizieranno nella prima pagina libera dopo l'indice.</div>` : ''}
       </div>
       <div class="card">
         <h2>Libreria foto</h2>
@@ -523,7 +576,8 @@
           <button class="icon" data-act="downSec" data-s="${s.id}" title="Sposta giù">↓</button>
           <button class="icon danger" data-act="delSec" data-s="${s.id}" title="Elimina sottotitolo">✕</button>
         </div>
-        <div class="row"><input type="text" class="grow" data-f="stitle" data-s="${s.id}" value="${esc(s.title)}" placeholder="Titolo della sezione"></div>`);
+        <div class="row"><input type="text" class="grow" data-f="stitle" data-s="${s.id}" value="${esc(s.title)}" placeholder="Titolo della sezione"></div>
+        ${eventBox(s)}`);
 
       s.paragraphs.forEach((p, pi) => {
         h.push(`<div class="para">
@@ -610,6 +664,12 @@
     const h = [];
     if (state.title) h.push(`<h1 class="doc-title">${esc(state.title)}</h1>`);
     if (state.subtitle) h.push(`<div class="doc-subtitle">${esc(state.subtitle)}</div>`);
+    if (state.toc.enabled) {
+      const items = state.sections.filter(x => x.title.trim());
+      h.push(`<div class="toc"><div class="toc-title">${esc(state.toc.title || 'Indice')}</div>${
+        items.length ? items.map(x => `<div class="toc-item">${esc(x.title)}</div>`).join('') : '<div class="toc-item" style="color:#aaa">(nessun sottotitolo)</div>'}</div>`);
+      h.push('<div class="page-break"><span>nuova pagina</span></div>');
+    }
     // Le foto a sinistra/destra restano affiancate anche al testo dei paragrafi successivi,
     // fino a una foto centrata o al sottotitolo seguente
     state.sections.forEach(s => {
@@ -704,7 +764,26 @@
       case 'pnenabled': state.pageNumbers.enabled = t.checked; renderEditor(); break;
       case 'title': state.title = t.value; break;
       case 'subtitle': state.subtitle = t.value; break;
-      case 'stitle': sec(s).title = t.value; break;
+      case 'stitle': {
+        sec(s).title = t.value;
+        const msg = document.getElementById('evmsg-' + s);
+        if (msg) msg.textContent = eventProblem(sec(s)) || '';
+        break;
+      }
+      case 'tocOn': state.toc.enabled = t.checked; renderEditor(); break;
+      case 'tocTitle': state.toc.title = t.value; break;
+      case 'evOn': sec(s).event.enabled = t.checked; renderEditor(); break;
+      case 'evText': sec(s).event.includeText = t.checked; break;
+      case 'evAlert': sec(s).event.alert = t.value; break;
+      case 'evDate': case 'evTime': {
+        const isDate = f === 'evDate';
+        const v = isDate ? maskDate(t.value) : maskTime(t.value);
+        if (v !== t.value) t.value = v;
+        sec(s).event[isDate ? 'date' : 'time'] = v;
+        const msg = document.getElementById('evmsg-' + s);
+        if (msg) msg.textContent = eventProblem(sec(s)) || '';
+        break;
+      }
       case 'ptext': para(s, p).text = t.value; break;
       case 'iname': img(s, p, i).name = t.value; break;
       case 'iw': case 'iwr': setSize(imgOf(t.dataset), 'w', t.value, t); break;
@@ -723,6 +802,15 @@
   // Corregge i valori fuori intervallo quando si esce dal campo
   $('#editor').addEventListener('change', (e) => {
     const t = e.target;
+    if (t.dataset.f === 'evDate' || t.dataset.f === 'evTime') {
+      const ev = sec(t.dataset.s).event, isDate = t.dataset.f === 'evDate';
+      const v = isDate ? padDate(t.value) : padTime(t.value);
+      if (v !== t.value) {
+        t.value = v; ev[isDate ? 'date' : 'time'] = v;
+        document.getElementById('evmsg-' + t.dataset.s).textContent = eventProblem(sec(t.dataset.s)) || '';
+        saveLocal();
+      }
+    }
     if (t.dataset.f === 'iw' || t.dataset.f === 'ih') {
       const im = imgOf(t.dataset);
       t.value = fmt(t.dataset.f === 'iw' ? im.widthCm : im.heightCm);
@@ -800,6 +888,9 @@
         state = defaultDoc(); break;
       case 'saveJson': saveJson(); return;
       case 'wipe': wipeDevice(); return;
+      case 'evExport': exportEvent(sec(s)); return;
+      case 'evAdd': addEvent(sec(s)); return;
+      case 'evKind': sec(s).event.kind = v; break;
       case 'openJson': $('#fileJson').value = ''; $('#fileJson').click(); return;
       case 'exportDocx': exportDocx(b); return;
       default: return;
@@ -977,8 +1068,17 @@
         children: [new D.TextRun({ text: state.subtitle, italics: true, size: 26, color: '555555', font: st.headFont })],
       }));
 
+      // Indice: elenco dei sottotitoli; il contenuto riparte dalla pagina successiva
+      const tocItems = state.toc.enabled ? state.sections.map(x => x.title.trim()).filter(Boolean) : [];
+      if (state.toc.enabled) {
+        children.push(new D.Paragraph({ spacing: { before: 240, after: 160 },
+          children: [new D.TextRun({ text: state.toc.title || 'Indice', font: st.headFont, size: st.h1Size * 2, bold: true, color: hex(st.accent) })] }));
+        tocItems.forEach(t => children.push(new D.Paragraph({ indent: { left: 284 }, spacing: { after: 80 }, children: [new D.TextRun(t)] })));
+      }
+      const contentStart = children.length;
+
       for (const s of state.sections) {
-        if (s.title) children.push(new D.Paragraph({ heading: D.HeadingLevel.HEADING_1, children: [new D.TextRun(s.title)] }));
+        if (s.title) children.push({ para: { heading: D.HeadingLevel.HEADING_1 }, runs: [new D.TextRun(s.title)] });
 
         // open = foto a sinistra/destra ancora affiancate al testo: cm che restano da "coprire" per lato
         let open = null, lastBlock = null;
@@ -1047,14 +1147,14 @@
           // Foto centrate: sotto il testo (e sotto le foto affiancate), con didascalia modificabile
           if (centers.length) closeFloats();
           for (const im of centers) {
-            children.push(new D.Paragraph({
-              alignment: D.AlignmentType.CENTER, spacing: { before: 120, after: im.showCaption && im.name ? 40 : 200 }, keepNext: true,
-              children: [new D.ImageRun({
+            children.push({
+              para: { alignment: D.AlignmentType.CENTER, spacing: { before: 120, after: im.showCaption && im.name ? 40 : 200 }, keepNext: true },
+              runs: [new D.ImageRun({
                 type: docxType(im.mime), data: dataUrlToBytes(im.dataUrl),
                 transformation: { width: Math.round(im.widthCm * CM_PX), height: Math.round(im.heightCm * CM_PX) },
                 altText: { name: im.name || 'Foto', title: im.name || 'Foto', description: im.name || '' },
               })],
-            }));
+            });
             if (im.showCaption && im.name) children.push(new D.Paragraph({
               alignment: D.AlignmentType.CENTER, spacing: { after: 240 },
               children: [new D.TextRun({ text: im.name, italics: true, size: 18, color: '555555' })],
@@ -1065,6 +1165,8 @@
         if (carry.length) { lastBlock = { para: { spacing: { after: 200 } }, runs: carry }; children.push(lastBlock); }
         closeFloats();
       }
+      // Con l'indice, il primo sottotitolo/paragrafo inizia su una pagina nuova
+      if (state.toc.enabled && children[contentStart]?.runs) children[contentStart].para.pageBreakBefore = true;
       const body = children.map(c => c.runs ? new D.Paragraph({ ...c.para, children: c.runs }) : c);
 
       const orEmpty = (arr) => arr.length ? arr : [new D.Paragraph('')];
@@ -1117,6 +1219,115 @@
     } finally {
       btn.disabled = false; btn.textContent = label;
     }
+  }
+
+  // ---------- Eventi in calendario (.ics) ----------
+  // Inserisce da sola le "/" e i ":" mentre si scrive (es. 01102026 -> 01/10/2026, 930 -> 9:30 -> 09:30)
+  function maskDate(v) {
+    if (/[\/.\-]/.test(v)) {   // scritta con i separatori, es. 5/11/2026
+      const [a = '', b = '', c = ''] = v.split(/[\/.\-]/).map(x => x.replace(/\D/g, ''));
+      return [a.slice(0, 2), b.slice(0, 2), c.slice(0, 4)].slice(0, v.split(/[\/.\-]/).length).join('/');
+    }
+    const d = v.replace(/\D/g, '').slice(0, 8);
+    return [d.slice(0, 2), d.slice(2, 4), d.slice(4)].filter(Boolean).join('/');
+  }
+  function maskTime(v) {
+    if (/[:.]/.test(v)) {        // scritta con i separatori, es. 9:30 o 9.30
+      const [h = '', m = ''] = v.split(/[:.]/).map(x => x.replace(/\D/g, ''));
+      return h.slice(0, 2) + ':' + m.slice(0, 2);
+    }
+    const d = v.replace(/\D/g, '').slice(0, 4);
+    return d.length > 2 ? d.slice(0, 2) + ':' + d.slice(2) : d;
+  }
+  // All'uscita dal campo completa con lo zero iniziale: 5/11/2026 -> 05/11/2026, 9:30 -> 09:30
+  function padDate(v) {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
+    return m ? `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[3]}` : v;
+  }
+  function padTime(v) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(v);
+    return m ? `${m[1].padStart(2, '0')}:${m[2]}` : v;
+  }
+  function parseEventDate(ev) {
+    const md = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(ev.date);
+    const mt = /^(\d{2}):(\d{2})$/.exec(ev.time);
+    if (!md || !mt) return null;
+    const [dd, mm, yy, hh, mi] = [md[1], md[2], md[3], mt[1], mt[2]].map(Number);
+    const dt = new Date(yy, mm - 1, dd, hh, mi);
+    if (dt.getFullYear() !== yy || dt.getMonth() !== mm - 1 || dt.getDate() !== dd || hh > 23 || mi > 59) return null;
+    return dt;
+  }
+  function eventProblem(s) {
+    const ev = s.event;
+    if (!ev.date && !ev.time) return 'Inserisci data e ora';
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(ev.date)) return 'Data nel formato gg/mm/aaaa';
+    if (!/^\d{2}:\d{2}$/.test(ev.time)) return 'Ora nel formato 00:00';
+    if (!parseEventDate(ev)) return 'Data o ora non valida';
+    if (!s.title.trim()) return 'Scrivi il sottotitolo: sarà il nome ' + (ev.kind === 'promemoria' ? 'del promemoria' : 'dell\'evento');
+    return '';
+  }
+  // Testo per il formato iCalendar: caratteri speciali protetti e righe lunghe spezzate a 75 byte
+  const icsEscape = (t) => t.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  function icsFold(line) {
+    const enc = new TextEncoder(), out = [];
+    let cur = '', bytes = 0;
+    for (const ch of line) {
+      const b = enc.encode(ch).length;
+      if (bytes + b > (out.length ? 74 : 75)) { out.push(cur); cur = ''; bytes = 0; }
+      cur += ch; bytes += b;
+    }
+    out.push(cur);
+    return out.join('\r\n ');
+  }
+  const icsDate = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}00`;
+  // Sul Mac passa i dati a Editor Documenti.app (link editordocumenti://), che crea
+  // l'evento nel calendario di default o il promemoria nella lista di default.
+  // Su iPhone/iPad gli eventi passano dal file .ics, che il sistema propone di aggiungere.
+  function addEvent(s) {
+    const problem = eventProblem(s);
+    if (problem) { toast(problem); return; }
+    const ev = s.event, isRem = ev.kind === 'promemoria';
+    if (IS_IOS) {
+      if (isRem) { toast('Il promemoria si può creare solo sul Mac'); return; }
+      exportEvent(s); return;
+    }
+    const [dd, mm, yy] = ev.date.split('/');
+    const notes = ev.includeText ? s.paragraphs.map(p => p.text.trim()).filter(Boolean).join('\n\n') : '';
+    const q = new URLSearchParams({ tipo: ev.kind, titolo: s.title.trim(), inizio: `${yy}-${mm}-${dd}T${ev.time}` });
+    if (notes) q.set('note', notes);
+    if (ev.alert !== 'none') q.set('avviso', ev.alert);
+    const a = document.createElement('a');
+    a.href = 'editordocumenti://aggiungi?' + q.toString().replace(/\+/g, '%20');
+    document.body.appendChild(a); a.click(); a.remove();
+    toast(isRem ? 'Invio a Promemoria… conferma nella finestra che compare'
+                : 'Invio a Calendario… conferma nella finestra che compare');
+  }
+
+  function exportEvent(s) {
+    const problem = eventProblem(s);
+    if (problem) { toast(problem); return; }
+    const ev = s.event, start = parseEventDate(ev), end = new Date(start.getTime() + 60 * 60 * 1000);
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    const notes = ev.includeText ? s.paragraphs.map(p => p.text.trim()).filter(Boolean).join('\n\n') : '';
+    const lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Editor Documenti//IT', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:${s.id}-${Date.now()}@editor-documenti`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${icsDate(start)}`,           // ora locale del dispositivo
+      `DTEND:${icsDate(end)}`,
+      `SUMMARY:${icsEscape(s.title.trim())}`,
+    ];
+    if (notes) lines.push(`DESCRIPTION:${icsEscape(notes)}`);
+    if (ev.alert !== 'none') {
+      lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(s.title.trim())}`,
+        `TRIGGER:${ev.alert === '0' ? 'PT0M' : '-PT' + ev.alert + 'M'}`, 'END:VALARM');
+    }
+    lines.push('END:VEVENT', 'END:VCALENDAR');
+    const ics = lines.map(icsFold).join('\r\n') + '\r\n';
+    const name = (s.title.trim().replace(/[\\/:*?"<>|]+/g, '').slice(0, 60) || 'evento') + '.ics';
+    download(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), name);
+    toast(IS_IOS ? 'Apri il file per aggiungerlo al Calendario' : 'Evento scaricato: aprilo per aggiungerlo al Calendario');
   }
 
   // ---------- Cancellazione dei dati dal dispositivo ----------
