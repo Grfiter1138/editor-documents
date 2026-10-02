@@ -1,0 +1,1171 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor Documenti</title>
+<link rel="icon" type="image/png" href="icon.png">
+<!-- Icona e aspetto da app quando la si aggiunge alla schermata Home di iPhone/iPad -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Editor Doc">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ffffff">
+<script src="docx.umd.js"></script>
+<script>
+  // Se la copia locale non c'è, carica la libreria dal CDN (serve internet)
+  if (!window.docx) document.write('<script src="https://cdn.jsdelivr.net/npm/docx@9.0.2/build/index.umd.js"><\/script>');
+</script>
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --panel: #ffffff;
+    --border: #d9dce1;
+    --text: #1f2328;
+    --muted: #667085;
+    --accent: #2563eb;
+    --accent-soft: #e8efff;
+    --danger: #c0392b;
+    --page-shadow: 0 2px 14px rgba(0,0,0,.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+    display: flex; flex-direction: column;
+  }
+  header.top {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header.top h1 { font-size: 16px; margin: 0 12px 0 0; }
+  header.top .spacer { flex: 1; }
+  button, .btn {
+    font: inherit; border: 1px solid var(--border); background: #fff; color: var(--text);
+    padding: 6px 11px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { background: #f6f7f9; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #1d4fd0; }
+  button.small { padding: 3px 8px; font-size: 12px; }
+  button.icon { padding: 3px 7px; font-size: 12px; min-width: 26px; }
+  button.danger { color: var(--danger); }
+  button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  input[type=text], input[type=number], textarea {
+    font: inherit; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%;
+    background: #fff; color: var(--text);
+  }
+  input[type=number] { width: 70px; }
+  textarea { min-height: 90px; resize: vertical; line-height: 1.45; }
+  label.lbl { display: block; font-size: 12px; color: var(--muted); margin: 0 0 3px; }
+
+  main { flex: 1; display: grid; grid-template-columns: minmax(380px, 46%) 1fr; min-height: 0; }
+  #editor { overflow-y: auto; padding: 16px; border-right: 1px solid var(--border); }
+  #previewWrap { overflow: auto; padding: 24px; }
+  input.num { width: 64px; }
+  .tabs { display: none; }
+  @media (max-width: 1000px) {
+    main { grid-template-columns: minmax(0, 1fr); }
+    #editor { border-right: 0; }
+    #previewWrap { padding: 12px; }
+    .tabs { display: flex; gap: 0; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+    .tabs button { flex: 1; border-radius: 0; margin-left: -1px; }
+    .tabs button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+    .tabs button:last-child { border-radius: 0 8px 8px 0; }
+    body[data-view="edit"] #previewWrap, body[data-view="preview"] #editor { display: none; }
+    header.top { padding: 8px 12px; gap: 6px; }
+    header.top h1 { width: 100%; margin: 0; }
+    header.top .spacer { display: none; }
+    #editor { padding: 12px; }
+    .card { padding: 12px; }
+    .style-form { grid-template-columns: 1fr; gap: 4px; }
+    .style-form > label:nth-child(odd) { margin-top: 6px; }
+  }
+  /* Schermi touch: pulsanti più grandi e testo a 16px (evita lo zoom automatico di Safari sui campi) */
+  @media (pointer: coarse) {
+    input[type=text], textarea, select { font-size: 16px; }
+    button.icon { min-width: 36px; min-height: 34px; font-size: 14px; }
+    button.small { padding: 7px 10px; font-size: 13px; }
+    .img-item { grid-template-columns: 56px 1fr auto; }
+    .img-item img { width: 56px; height: 56px; }
+    input[type=range] { height: 28px; }
+  }
+  .share-actions { display: flex; flex-direction: column; gap: 10px; }
+  .share-actions button { padding: 12px; font-size: 16px; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 8px; }
+  .grow { flex: 1; min-width: 0; }
+  .section { border-left: 4px solid var(--accent); }
+  .para { border: 1px dashed var(--border); border-radius: 8px; padding: 10px; margin-top: 10px; background: #fafbfc; }
+  .para-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+  .para-head .grow { font-weight: 600; }
+  .img-item { display: grid; grid-template-columns: 72px 1fr auto; gap: 10px; align-items: start;
+    background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-top: 8px; }
+  .img-item img { width: 72px; height: 72px; object-fit: cover; border-radius: 5px; background: #eee; }
+  .img-item .ctrls { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .img-item .side { display: flex; flex-direction: column; gap: 4px; }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; margin-left: -1px; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .size { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .size input[type=range] { flex: 1; min-width: 90px; }
+  .hint { font-size: 12px; color: var(--muted); }
+  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; margin-top: 8px; max-height: 170px; overflow-y: auto; }
+  .lib-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 5px; border: 1px solid var(--border); }
+  .add-sec { width: 100%; padding: 10px; border-style: dashed; color: var(--accent); }
+
+  .style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .style-tile { border: 2px solid var(--border); border-radius: 8px; padding: 8px; cursor: pointer; background: #fff; }
+  .style-tile:hover { border-color: #aab4c3; }
+  .style-tile.sel { border-color: var(--accent); background: var(--accent-soft); }
+  .style-tile * { pointer-events: none; }
+  .style-name { font-size: 11px; color: var(--muted); margin-top: 6px; text-align: center; font-weight: 600; }
+  .style-form { display: grid; grid-template-columns: 150px 1fr; gap: 8px 10px; align-items: center; margin-top: 10px; font-size: 13px; }
+  .style-form > label:nth-child(odd) { color: var(--muted); font-size: 12px; }
+  select { font: inherit; border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; background: #fff; color: var(--text); }
+  input[type=color] { width: 48px; height: 30px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; background: #fff; }
+
+  /* ---------- Anteprima pagina (A4) ---------- */
+  .page {
+    width: 21cm; min-height: 29.7cm; padding: 2cm; margin: 0 auto; background: #fff; box-shadow: var(--page-shadow);
+    font-family: var(--body-font); font-size: var(--body-size); line-height: calc(var(--line) * 1.2); color: #000;
+  }
+  .page .doc-title { font-family: var(--head-font); font-size: var(--title-size); color: var(--title-color); text-align: var(--title-align);
+    text-transform: var(--title-transform); font-weight: var(--title-weight); line-height: 1.15; margin: 0 0 4pt; }
+  .page .doc-subtitle { font-family: var(--head-font); text-align: var(--title-align); font-style: italic; color: #555; font-size: 13pt; margin: 0 0 18pt; }
+  .page h2.sec { font-family: var(--head-font); font-size: var(--h1-size); color: var(--accent); font-weight: var(--head-weight);
+    border-bottom: var(--head-border); padding-bottom: 2pt; line-height: 1.2; margin: 18pt 0 6pt; }
+  .page .secbody::after { content: ""; display: block; clear: both; }
+  .page .pblock { margin-bottom: 10pt; }
+  .page .ptext { margin: 0; white-space: pre-wrap; text-align: var(--align); }
+  .page figure { margin: 0; }
+  .page figure img { display: block; width: 100%; height: 100%; }
+  .page figure.left { float: left; clear: left; margin: 0 0.4cm 0.3cm 0; }
+  .page figure.right { float: right; clear: right; margin: 0 0 0.3cm 0.4cm; }
+  .page figure.center { margin: 8pt auto 10pt; clear: both; }
+  .page figcaption { font-size: 9pt; font-style: italic; color: #555; text-align: center; padding-top: 3pt; }
+  .page .empty { color: #aaa; text-align: center; margin-top: 4cm; font-style: italic; }
+  .page { display: flex; flex-direction: column; }
+  .page .pbody { flex: 1; }
+  .page .hf { font-size: 9pt; color: #444; line-height: 1.25; display: flex; gap: 0.4cm; align-items: center; }
+  .page .hf.stack { flex-direction: column; align-items: stretch; gap: 4pt; }
+  .page .hf.img-right { flex-direction: row-reverse; }
+  .page .hf .hf-text { flex: 1; white-space: pre-wrap; }
+  .page .hf .hf-text b { font-size: 10pt; color: #000; }
+  .page .hf img { display: block; flex: none; }
+  .page .hf-head { margin: -0.8cm 0 0.8cm; padding-bottom: 6pt; }
+  .page .hf-foot { margin-top: 0.8cm; padding-top: 6pt; }
+  .page .hf-head.line { border-bottom: 0.75pt solid #888; }
+  .page .hf-foot.line { border-top: 0.75pt solid #888; }
+  .page .pnum { font-size: 9pt; color: #444; margin-top: 4pt; }
+  .page .hf-note { font-size: 8pt; color: #b0b0b0; font-style: italic; text-align: center; }
+
+  /* ---------- Finestra libreria ---------- */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #fff; border-radius: 12px; width: min(760px, 100%); max-height: 85vh; display: flex; flex-direction: column; }
+  .modal header { padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 600; }
+  .modal .body { padding: 16px; overflow-y: auto; }
+  .modal footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+  .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .pick { border: 2px solid transparent; border-radius: 8px; padding: 4px; cursor: pointer; text-align: center; font-size: 11px; color: var(--muted); }
+  .pick img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 5px; display: block; margin-bottom: 3px; }
+  .pick span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick.sel { border-color: var(--accent); background: var(--accent-soft); }
+
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #222; color: #fff;
+    padding: 9px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 30; }
+  #toast.show { opacity: .95; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Editor Documenti</h1>
+  <button data-act="newDoc">Nuovo</button>
+  <button data-act="openJson">Apri progetto…</button>
+  <button data-act="saveJson">Salva progetto</button>
+  <button class="danger" data-act="wipe" title="Cancella il documento e le foto memorizzati in questo browser">🗑 Cancella dal dispositivo</button>
+  <span class="spacer"></span>
+  <button class="primary" data-act="exportDocx">⬇ Scarica Word (.docx)</button>
+</header>
+
+<nav class="tabs">
+  <button class="on" data-act="view" data-v="edit">✏️ Modifica</button>
+  <button data-act="view" data-v="preview">👁 Anteprima</button>
+</nav>
+<main>
+  <div id="editor"></div>
+  <div id="previewWrap"><div class="page" id="preview"></div></div>
+</main>
+
+<div class="modal-bg" id="libModal">
+  <div class="modal">
+    <header>Scegli le foto dalla libreria</header>
+    <div class="body"><div class="pick-grid" id="pickGrid"></div></div>
+    <footer>
+      <span class="hint grow" id="pickCount"></span>
+      <button data-act="modalClose">Annulla</button>
+      <button class="primary" data-act="modalOk">Inserisci</button>
+    </footer>
+  </div>
+</div>
+
+<div class="modal-bg" id="shareModal">
+  <div class="modal" style="width:min(420px,100%)">
+    <header>Documento Word pronto</header>
+    <div class="body">
+      <div class="share-actions">
+        <button class="primary" data-act="shareDocx">Apri con… (Word, Mail, WhatsApp…)</button>
+        <button data-act="saveDocx">Salva in File</button>
+        <button data-act="shareClose">Chiudi</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileImgs" accept="image/*" multiple hidden>
+<input type="file" id="fileFolder" webkitdirectory directory multiple hidden>
+<input type="file" id="fileLibImgs" accept="image/*" multiple hidden>
+<input type="file" id="fileJson" accept=".json,application/json" hidden>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const CONTENT_W_CM = 17;           // larghezza utile pagina A4 con margini da 2 cm
+  const STORAGE_KEY = 'editor-documenti-web-v1';
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const fmt = (n) => String(n).replace('.', ',');                         // 4.5 -> "4,5"
+  const parseNum = (v) => parseFloat(String(v).replace(',', '.'));        // accetta sia 4,5 che 4.5
+  // iPhone / iPad (anche iPad che si presenta come Mac)
+  const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  const newPara = () => ({ id: uid(), text: '', images: [] });
+  const newSection = () => ({ id: uid(), title: '', paragraphs: [newPara()] });
+  const newHF = () => ({ enabled: false, scope: 'all', text: '', textAlign: 'center', boldFirst: true, line: true, image: null });
+  const newPageNumbers = () => ({ enabled: false, format: 'pagina-di', align: 'center' });
+  const defaultDoc = () => ({
+    title: '', subtitle: '', sections: [newSection()],
+    letterhead: newHF(), footer: newHF(), pageNumbers: newPageNumbers(), style: newStyle(),
+  });
+  // Completa i progetti salvati con versioni precedenti del programma
+  function withDefaults(d) {
+    d.letterhead = { ...newHF(), ...(d.letterhead || {}) };
+    d.footer = { ...newHF(), ...(d.footer || {}) };
+    d.pageNumbers = { ...newPageNumbers(), ...(d.pageNumbers || {}) };
+    d.style = { ...newStyle(), ...(d.style || {}) };
+    return d;
+  }
+  const HF_LABEL = { letterhead: 'Carta intestata', footer: 'Piè di pagina' };
+  const PN_FORMATS = { 'n': '1', 'pagina': 'Pagina 1', 'pagina-di': 'Pagina 1 di 3', 'n-di': '1 / 3' };
+
+  // Stili del documento: applicati sia all'anteprima sia agli stili di Word (Normale, Titolo, Titolo 1)
+  const STYLE_PRESETS = {
+    classico: { label: 'Classico', bodyFont: 'Calibri', headFont: 'Calibri Light', bodySize: 11, titleSize: 28, h1Size: 16,
+      accent: '#2f5496', titleColor: '#000000', lineSpacing: 1.15, align: 'justify', titleAlign: 'center', headBold: false, headLine: false, titleCaps: false },
+    elegante: { label: 'Elegante', bodyFont: 'Georgia', headFont: 'Georgia', bodySize: 11, titleSize: 30, h1Size: 15,
+      accent: '#7a4b1e', titleColor: '#3b2a1a', lineSpacing: 1.3, align: 'justify', titleAlign: 'center', headBold: false, headLine: true, titleCaps: false },
+    moderno: { label: 'Moderno', bodyFont: 'Arial', headFont: 'Arial', bodySize: 10.5, titleSize: 26, h1Size: 15,
+      accent: '#0f766e', titleColor: '#0f766e', lineSpacing: 1.3, align: 'left', titleAlign: 'left', headBold: true, headLine: false, titleCaps: false },
+    tecnico: { label: 'Tecnico', bodyFont: 'Verdana', headFont: 'Arial', bodySize: 10, titleSize: 22, h1Size: 13,
+      accent: '#1f2937', titleColor: '#1f2937', lineSpacing: 1.2, align: 'left', titleAlign: 'left', headBold: true, headLine: true, titleCaps: true },
+    formale: { label: 'Formale', bodyFont: 'Times New Roman', headFont: 'Times New Roman', bodySize: 12, titleSize: 24, h1Size: 14,
+      accent: '#000000', titleColor: '#000000', lineSpacing: 1.5, align: 'justify', titleAlign: 'center', headBold: true, headLine: false, titleCaps: true },
+  };
+  const FONTS = ['Calibri', 'Calibri Light', 'Arial', 'Helvetica', 'Verdana', 'Cambria', 'Georgia', 'Garamond', 'Book Antiqua', 'Times New Roman'];
+  const SERIF = ['Cambria', 'Georgia', 'Garamond', 'Book Antiqua', 'Times New Roman'];
+  const cssFont = (f) => `"${f}", ${SERIF.includes(f) ? 'Georgia, "Times New Roman", serif' : (f.startsWith('Calibri') ? 'Carlito, ' : '') + '"Helvetica Neue", Arial, sans-serif'}`;
+  const newStyle = (key = 'classico') => { const { label, ...rest } = STYLE_PRESETS[key]; return { preset: key, ...rest }; };
+
+  let state = withDefaults(loadLocal() || defaultDoc());
+  let library = [];                   // foto caricate dalla cartella (solo in memoria)
+  let pendingTarget = null;           // {s, p} paragrafo che riceverà le foto
+  let pickSel = new Set();
+
+  // ---------- Persistenza ----------
+  function loadLocal() {
+    try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  }
+  let saveTimer, warnedQuota = false;
+  function saveLocal() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+      catch {
+        if (!warnedQuota) { toast('Salvataggio automatico non riuscito (foto troppo grandi): usa "Salva progetto".'); warnedQuota = true; }
+      }
+    }, 400);
+  }
+  function changed() { renderPreview(); saveLocal(); }
+
+  // ---------- Lookup ----------
+  const sec = (s) => state.sections.find(x => x.id === s);
+  const para = (s, p) => sec(s)?.paragraphs.find(x => x.id === p);
+  const img = (s, p, i) => para(s, p)?.images.find(x => x.id === i);
+  // Immagine indicata dai data-attribute di un controllo (foto di paragrafo o logo di intestazione/piè)
+  const imgOf = (ds) => ds.hf ? state[ds.hf].image : img(ds.s, ds.p, ds.i);
+  function move(arr, id, dir) {
+    const i = arr.findIndex(x => x.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+
+  // ---------- Caricamento immagini ----------
+  function readAsDataURL(file) {
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  }
+  function loadImage(src) {
+    return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+  }
+  // Normalizza in PNG/JPEG/GIF e riduce le foto molto grandi per non appesantire il .docx
+  async function processFile(file) {
+    let dataUrl = await readAsDataURL(file);
+    let im = await loadImage(dataUrl);
+    let mime = file.type;
+    const MAX = 2400;
+    const okType = ['image/png', 'image/jpeg', 'image/gif'].includes(mime);
+    if (!okType || Math.max(im.naturalWidth, im.naturalHeight) > MAX) {
+      const k = Math.min(1, MAX / Math.max(im.naturalWidth, im.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+      const ctx = c.getContext('2d');
+      mime = mime === 'image/png' ? 'image/png' : 'image/jpeg';
+      if (mime === 'image/jpeg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
+      ctx.drawImage(im, 0, 0, c.width, c.height);
+      dataUrl = c.toDataURL(mime, 0.9);
+      im = await loadImage(dataUrl);
+    }
+    return { name: file.name.replace(/\.[^.]+$/, ''), dataUrl, mime, w: im.naturalWidth, h: im.naturalHeight };
+  }
+  async function processFiles(files) {
+    const list = [...files].filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(f.name));
+    const out = [];
+    for (const f of list) {
+      try { out.push(await processFile(f)); } catch { toast('Impossibile leggere: ' + f.name); }
+    }
+    return out;
+  }
+  function makeDocImage(src, widthCm = 7) {
+    const ratio = src.w / src.h;
+    widthCm = Math.min(widthCm, CONTENT_W_CM);
+    return {
+      id: uid(), name: src.name, showCaption: true, align: 'left',
+      widthCm, heightCm: round1(widthCm / ratio), lockRatio: true, ratio,
+      dataUrl: src.dataUrl, mime: src.mime,
+    };
+  }
+  function addImagesTo(target, srcs) {
+    if (target.hf) {
+      const im = makeDocImage(srcs[0], 4);
+      im.align = state[target.hf].image?.align || 'left';
+      state[target.hf].image = im;
+      renderEditor(); changed();
+      return;
+    }
+    const p = para(target.s, target.p);
+    if (!p) return;
+    srcs.forEach(s => p.images.push(makeDocImage(s)));
+    renderEditor(); changed();
+  }
+
+  // ---------- Editor ----------
+  const segBtns = (opts, current, act, attrs) => `<span class="seg">${opts.map(([v, l]) =>
+    `<button class="small ${current === v ? 'on' : ''}" data-act="${act}" data-v="${v}" ${attrs}>${l}</button>`).join('')}</span>`;
+
+  function hfCard(key) {
+    const hf = state[key], a = `data-hf="${key}"`, isHead = key === 'letterhead';
+    const head = `<div class="row">
+        <h2 style="margin:0">${HF_LABEL[key]}</h2><span class="grow"></span>
+        <label class="hint"><input type="checkbox" data-f="hfenabled" ${a} ${hf.enabled ? 'checked' : ''}> attiva</label>
+      </div>`;
+    if (!hf.enabled) {
+      return `<div class="card">${head}<div class="hint" style="margin-top:6px">${isHead
+        ? 'Logo e/o testo (nome azienda, indirizzo…) in alto nella pagina.'
+        : 'Logo e/o testo (contatti, P.IVA…) in fondo alla pagina.'}</div></div>`;
+    }
+    const im = hf.image;
+    return `<div class="card">${head}
+      <div class="row">
+        <span class="hint">Mostra su:</span>
+        ${segBtns([['first', 'Solo prima pagina'], ['all', 'Tutte le pagine']], hf.scope, 'hfScope', a)}
+      </div>
+      <div style="height:8px"></div>
+      <label class="lbl">Testo (una riga per ogni informazione)</label>
+      <textarea data-f="hftext" ${a} style="min-height:70px" placeholder="${isHead
+        ? 'Es. Nome Azienda S.p.A.&#10;Via Roma 1 – 20100 Milano&#10;Tel. 02 1234567 – info@azienda.it'
+        : 'Es. Nome Azienda S.p.A. – P.IVA 01234567890&#10;www.azienda.it'}">${esc(hf.text)}</textarea>
+      <div class="row">
+        <span class="hint">Allineamento testo:</span>
+        ${segBtns([['left', 'Sinistra'], ['center', 'Centro'], ['right', 'Destra']], hf.textAlign, 'hfTextAlign', a)}
+      </div>
+      <div class="row">
+        <label class="hint"><input type="checkbox" data-f="hfbold" ${a} ${hf.boldFirst ? 'checked' : ''}> prima riga in grassetto</label>
+        <label class="hint"><input type="checkbox" data-f="hfline" ${a} ${hf.line ? 'checked' : ''}> linea di separazione</label>
+      </div>
+      ${im ? `<div class="img-item">
+          <img src="${im.dataUrl}" alt="" style="object-fit:contain">
+          <div class="ctrls">
+            <div class="row"><span class="hint">Posizione immagine:</span>
+              ${segBtns([['left', '⇤ Sinistra'], ['center', 'Centro'], ['right', 'Destra ⇥']], im.align, 'hfImgAlign', a)}</div>
+            <div class="size">
+              L <input type="text" inputmode="decimal" class="num" data-f="iw" ${a} value="${fmt(im.widthCm)}"> cm
+              × A <input type="text" inputmode="decimal" class="num" data-f="ih" ${a} value="${fmt(im.heightCm)}"> cm
+              <label title="Mantieni le proporzioni"><input type="checkbox" data-f="ilock" ${a} ${im.lockRatio ? 'checked' : ''}> 🔗</label>
+            </div>
+            <div class="size">
+              <input type="range" min="1" max="${CONTENT_W_CM}" step="0.1" data-f="iwr" ${a} value="${im.widthCm}">
+              <button class="small" data-act="resetSize" ${a} title="Ripristina proporzioni originali">↺</button>
+            </div>
+          </div>
+          <div class="side"><button class="icon danger" data-act="hfDelImg" ${a} title="Rimuovi immagine">✕</button></div>
+        </div>` : ''}
+      <div class="row" style="margin-top:8px">
+        <button class="small" data-act="hfAddFile" ${a}>${im ? 'Cambia immagine' : '+ Immagine / logo dal computer'}</button>
+        <button class="small" data-act="hfAddLib" ${a}>+ Dalla libreria</button>
+      </div>
+    </div>`;
+  }
+
+  function pageNumbersCard() {
+    const pn = state.pageNumbers;
+    return `<div class="card">
+      <div class="row">
+        <h2 style="margin:0">Numeri di pagina</h2><span class="grow"></span>
+        <label class="hint"><input type="checkbox" data-f="pnenabled" ${pn.enabled ? 'checked' : ''}> attiva</label>
+      </div>
+      ${pn.enabled ? `
+        <div class="row"><span class="hint">Formato:</span>
+          ${segBtns(Object.entries(PN_FORMATS), pn.format, 'pnFormat', '')}</div>
+        <div class="row"><span class="hint">Posizione (in fondo alla pagina):</span>
+          ${segBtns([['left', 'Sinistra'], ['center', 'Centro'], ['right', 'Destra']], pn.align, 'pnAlign', '')}</div>`
+      : `<div class="hint" style="margin-top:6px">Numera le pagine del documento Word, in fondo a ogni pagina.</div>`}
+    </div>`;
+  }
+
+  function styleCard() {
+    const st = state.style;
+    const tiles = Object.entries(STYLE_PRESETS).map(([k, ps]) => `
+      <div class="style-tile ${st.preset === k ? 'sel' : ''}" data-act="stylePreset" data-v="${k}">
+        <div style="font-family:${esc(cssFont(ps.headFont))};color:${ps.titleColor};font-size:15px;text-align:${ps.titleAlign};${ps.titleCaps ? 'text-transform:uppercase;font-weight:700;font-size:12px;' : ''}">Titolo</div>
+        <div style="font-family:${esc(cssFont(ps.headFont))};color:${ps.accent};font-size:11px;font-weight:${ps.headBold ? 700 : 400};${ps.headLine ? `border-bottom:1px solid ${ps.accent};` : ''}margin:3px 0">Sottotitolo</div>
+        <div style="font-family:${esc(cssFont(ps.bodyFont))};font-size:8px;line-height:${ps.lineSpacing * 1.2};color:#333;text-align:${ps.align}">Testo del paragrafo di esempio con più righe per vedere il carattere.</div>
+        <div class="style-name">${ps.label}</div>
+      </div>`).join('');
+    const fontSel = (k) => `<select data-f="st" data-k="${k}">${FONTS.map(f => `<option ${st[k] === f ? 'selected' : ''} style="font-family:${esc(cssFont(f))}">${f}</option>`).join('')}</select>`;
+    const num = (k) => `<input type="text" inputmode="decimal" class="num" data-f="st" data-k="${k}" data-num="1" value="${fmt(st[k])}">`;
+    return `<div class="card">
+      <h2>Stile del documento</h2>
+      <div class="style-grid">${tiles}</div>
+      <details style="margin-top:10px" ${state.styleOpen ? 'open' : ''} data-f="stOpen">
+        <summary class="hint" style="cursor:pointer">Personalizza lo stile</summary>
+        <div class="style-form">
+          <label>Carattere testo</label>${fontSel('bodyFont')}
+          <label>Carattere titoli</label>${fontSel('headFont')}
+          <label>Dimensione testo</label><span>${num('bodySize')} pt</span>
+          <label>Dimensione titolo</label><span>${num('titleSize')} pt</span>
+          <label>Dimensione sottotitoli</label><span>${num('h1Size')} pt</span>
+          <label>Colore sottotitoli</label><input type="color" data-f="st" data-k="accent" value="${st.accent}">
+          <label>Colore titolo</label><input type="color" data-f="st" data-k="titleColor" value="${st.titleColor}">
+          <label>Interlinea</label><select data-f="st" data-k="lineSpacing">${[1, 1.15, 1.2, 1.3, 1.5, 2].map(v => `<option value="${v}" ${st.lineSpacing == v ? 'selected' : ''}>${String(v).replace('.', ',')}</option>`).join('')}</select>
+          <label>Allineamento testo</label>${segBtns([['justify', 'Giustificato'], ['left', 'A sinistra']], st.align, 'stSet', 'data-k="align"')}
+          <label>Posizione titolo</label>${segBtns([['center', 'Centrato'], ['left', 'A sinistra']], st.titleAlign, 'stSet', 'data-k="titleAlign"')}
+          <label>Sottotitoli</label><span class="row" style="gap:12px">
+            <label class="hint"><input type="checkbox" data-f="st" data-k="headBold" ${st.headBold ? 'checked' : ''}> grassetto</label>
+            <label class="hint"><input type="checkbox" data-f="st" data-k="headLine" ${st.headLine ? 'checked' : ''}> linea sotto</label></span>
+          <label>Titolo</label><label class="hint"><input type="checkbox" data-f="st" data-k="titleCaps" ${st.titleCaps ? 'checked' : ''}> tutto maiuscolo</label>
+        </div>
+      </details>
+    </div>`;
+  }
+
+  function renderEditor() {
+    const h = [];
+    h.push(styleCard());
+    h.push(hfCard('letterhead'));
+    h.push(`
+      <div class="card">
+        <h2>Titolo del documento</h2>
+        <label class="lbl">Titolo</label>
+        <input type="text" data-f="title" value="${esc(state.title)}" placeholder="Es. Relazione tecnica">
+        <div style="height:8px"></div>
+        <label class="lbl">Sottotitolo / riga descrittiva (facoltativa)</label>
+        <input type="text" data-f="subtitle" value="${esc(state.subtitle)}" placeholder="Es. Autore, data, reparto…">
+      </div>
+      <div class="card">
+        <h2>Libreria foto</h2>
+        <div class="row">
+          ${IS_IOS ? '' : '<button data-act="loadFolder">📁 Carica cartella</button>'}
+          <button data-act="loadLibFiles">🖼 Carica foto${IS_IOS ? ' (anche più di una)' : ''}</button>
+          ${library.length ? `<button class="small danger" data-act="clearLib">Svuota</button>` : ''}
+        </div>
+        ${library.length
+          ? `<div class="lib-grid">${library.map(l => `<img src="${l.dataUrl}" title="${esc(l.name)}">`).join('')}</div>
+             <div class="hint" style="margin-top:6px">${library.length} foto pronte. Usa "Dalla libreria" in un paragrafo per inserirle.</div>`
+          : `<div class="hint" style="margin-top:8px">Carica una cartella di foto per averle a portata di mano, oppure aggiungile direttamente dal paragrafo.</div>`}
+      </div>`);
+
+    state.sections.forEach((s, si) => {
+      h.push(`<div class="card section">
+        <div class="row">
+          <strong style="font-size:13px">Sottotitolo ${si + 1}</strong>
+          <span class="grow"></span>
+          <button class="icon" data-act="upSec" data-s="${s.id}" title="Sposta su">↑</button>
+          <button class="icon" data-act="downSec" data-s="${s.id}" title="Sposta giù">↓</button>
+          <button class="icon danger" data-act="delSec" data-s="${s.id}" title="Elimina sottotitolo">✕</button>
+        </div>
+        <div class="row"><input type="text" class="grow" data-f="stitle" data-s="${s.id}" value="${esc(s.title)}" placeholder="Titolo della sezione"></div>`);
+
+      s.paragraphs.forEach((p, pi) => {
+        h.push(`<div class="para">
+          <div class="para-head">
+            <span class="grow">Paragrafo ${pi + 1}</span>
+            <button class="icon" data-act="upPara" data-s="${s.id}" data-p="${p.id}" title="Sposta su">↑</button>
+            <button class="icon" data-act="downPara" data-s="${s.id}" data-p="${p.id}" title="Sposta giù">↓</button>
+            <button class="icon danger" data-act="delPara" data-s="${s.id}" data-p="${p.id}" title="Elimina paragrafo">✕</button>
+          </div>
+          <textarea data-f="ptext" data-s="${s.id}" data-p="${p.id}" placeholder="Scrivi il testo del paragrafo…">${esc(p.text)}</textarea>`);
+
+        p.images.forEach(im => {
+          const ids = `data-s="${s.id}" data-p="${p.id}" data-i="${im.id}"`;
+          h.push(`<div class="img-item">
+            <img src="${im.dataUrl}" alt="">
+            <div class="ctrls">
+              <div class="row">
+                <input type="text" class="grow" data-f="iname" ${ids} value="${esc(im.name)}" placeholder="Nome della foto">
+              </div>
+              <div class="row">
+                <label class="hint"><input type="checkbox" data-f="icap" ${ids} ${im.showCaption ? 'checked' : ''}> mostra il nome sotto la foto</label>
+              </div>
+              <div class="row">
+                <span class="seg">
+                  ${[['left', '⇤ Sinistra'], ['center', 'Centro'], ['right', 'Destra ⇥']].map(([v, l]) =>
+                    `<button class="small ${im.align === v ? 'on' : ''}" data-act="align" data-v="${v}" ${ids}>${l}</button>`).join('')}
+                </span>
+              </div>
+              <div class="size">
+                L <input type="text" inputmode="decimal" class="num" data-f="iw" ${ids} value="${fmt(im.widthCm)}"> cm
+                × A <input type="text" inputmode="decimal" class="num" data-f="ih" ${ids} value="${fmt(im.heightCm)}"> cm
+                <label title="Mantieni le proporzioni"><input type="checkbox" data-f="ilock" ${ids} ${im.lockRatio ? 'checked' : ''}> 🔗</label>
+              </div>
+              <div class="size">
+                <input type="range" min="1" max="${CONTENT_W_CM}" step="0.1" data-f="iwr" ${ids} value="${im.widthCm}">
+                <button class="small" data-act="resetSize" ${ids} title="Ripristina proporzioni originali">↺</button>
+              </div>
+            </div>
+            <div class="side">
+              <button class="icon" data-act="upImg" ${ids} title="Sposta su">↑</button>
+              <button class="icon" data-act="downImg" ${ids} title="Sposta giù">↓</button>
+              <button class="icon danger" data-act="delImg" ${ids} title="Rimuovi foto">✕</button>
+            </div>
+          </div>`);
+        });
+
+        h.push(`<div class="row" style="margin-top:8px">
+            <button class="small" data-act="addFile" data-s="${s.id}" data-p="${p.id}">+ Foto dal computer</button>
+            <button class="small" data-act="addLib" data-s="${s.id}" data-p="${p.id}">+ Dalla libreria</button>
+          </div>
+        </div>`);
+      });
+
+      h.push(`<div class="row" style="margin-top:10px"><button class="small" data-act="addPara" data-s="${s.id}">+ Paragrafo</button></div></div>`);
+    });
+
+    h.push(`<button class="add-sec" data-act="addSec">+ Aggiungi sottotitolo</button>`);
+    h.push(`<div style="height:14px"></div>`);
+    h.push(hfCard('footer'));
+    h.push(pageNumbersCard());
+    $('#editor').innerHTML = h.join('');
+  }
+
+  // ---------- Anteprima ----------
+  function figureHtml(im) {
+    const cap = im.showCaption && im.name ? `<figcaption>${esc(im.name)}</figcaption>` : '';
+    return `<figure class="${im.align}" style="width:${im.widthCm}cm">
+      <div style="width:${im.widthCm}cm;height:${im.heightCm}cm"><img src="${im.dataUrl}" alt="${esc(im.name)}"></div>${cap}</figure>`;
+  }
+  function hfHtml(key) {
+    const hf = state[key];
+    if (!hf.enabled || (!hf.text && !hf.image)) return '';
+    const lines = hf.text.split('\n');
+    const text = hf.text ? lines.map((l, k) => k === 0 && hf.boldFirst ? `<b>${esc(l)}</b>` : esc(l)).join('\n') : '';
+    const im = hf.image;
+    const side = im && hf.text && im.align !== 'center';
+    const imgTag = im ? `<img src="${im.dataUrl}" alt="" style="width:${im.widthCm}cm;height:${im.heightCm}cm;${
+      side ? '' : im.align === 'center' ? 'margin:0 auto' : im.align === 'right' ? 'margin-left:auto' : ''}">` : '';
+    const cls = ['hf', key === 'letterhead' ? 'hf-head' : 'hf-foot', hf.line ? 'line' : '',
+      side ? (im.align === 'right' ? 'img-right' : '') : 'stack'].join(' ');
+    return `<div class="${cls}">${imgTag}${text ? `<div class="hf-text" style="text-align:${hf.textAlign}">${text}</div>` : ''}</div>`;
+  }
+  function renderPreview() {
+    const h = [];
+    if (state.title) h.push(`<h1 class="doc-title">${esc(state.title)}</h1>`);
+    if (state.subtitle) h.push(`<div class="doc-subtitle">${esc(state.subtitle)}</div>`);
+    // Le foto a sinistra/destra restano affiancate anche al testo dei paragrafi successivi,
+    // fino a una foto centrata o al sottotitolo seguente
+    state.sections.forEach(s => {
+      if (s.title) h.push(`<h2 class="sec">${esc(s.title)}</h2>`);
+      h.push('<div class="secbody">');
+      s.paragraphs.forEach(p => {
+        const floats = p.images.filter(i => i.align !== 'center');
+        const centers = p.images.filter(i => i.align === 'center');
+        if (!p.text && !p.images.length) return;
+        h.push(p.text
+          ? `<div class="pblock">${floats.map(figureHtml).join('')}<p class="ptext">${esc(p.text)}</p></div>`
+          : floats.map(figureHtml).join(''));
+        centers.forEach(c => h.push(figureHtml(c)));
+      });
+      h.push('</div>');
+    });
+    const st = state.style, pv = $('#preview').style;
+    pv.setProperty('--body-font', cssFont(st.bodyFont));
+    pv.setProperty('--head-font', cssFont(st.headFont));
+    pv.setProperty('--body-size', st.bodySize + 'pt');
+    pv.setProperty('--title-size', st.titleSize + 'pt');
+    pv.setProperty('--h1-size', st.h1Size + 'pt');
+    pv.setProperty('--accent', st.accent);
+    pv.setProperty('--title-color', st.titleColor);
+    pv.setProperty('--line', st.lineSpacing);
+    pv.setProperty('--align', st.align);
+    pv.setProperty('--title-align', st.titleAlign);
+    pv.setProperty('--head-weight', st.headBold ? 700 : 400);
+    pv.setProperty('--head-border', st.headLine ? `0.75pt solid ${st.accent}` : 'none');
+    pv.setProperty('--title-transform', st.titleCaps ? 'uppercase' : 'none');
+    pv.setProperty('--title-weight', st.titleCaps ? 700 : 400);
+    const pn = state.pageNumbers;
+    const pnHtml = pn.enabled ? `<div class="pnum" style="text-align:${pn.align}">${PN_FORMATS[pn.format]}</div>` : '';
+    const notes = ['letterhead', 'footer'].filter(k => state[k].enabled && state[k].scope === 'first')
+      .map(k => `${HF_LABEL[k]}: solo sulla prima pagina`);
+    $('#preview').innerHTML = hfHtml('letterhead')
+      + `<div class="pbody">${h.length ? h.join('') : '<div class="empty">L\'anteprima del documento apparirà qui.</div>'}</div>`
+      + hfHtml('footer') + pnHtml
+      + (notes.length ? `<div class="hf-note">${notes.join(' · ')}</div>` : '');
+    fitPreview();
+  }
+  function fitPreview() {
+    const wrap = $('#previewWrap'), page = $('#preview');
+    page.style.zoom = 1;
+    const avail = wrap.clientWidth - (window.innerWidth <= 1000 ? 24 : 48);
+    if (avail <= 0) return;   // anteprima nascosta (scheda Modifica su telefono)
+    const k = Math.min(1, avail / page.offsetWidth);
+    page.style.zoom = k;
+  }
+  window.addEventListener('resize', fitPreview);
+
+  // ---------- Eventi input ----------
+  function setSize(im, which, val, root) {
+    val = parseNum(val);
+    if (!(val > 0)) return;
+    val = Math.max(0.5, val);
+    if (which === 'w') {
+      im.widthCm = round1(Math.min(val, CONTENT_W_CM));
+      if (im.lockRatio) im.heightCm = round1(im.widthCm / im.ratio);
+    } else {
+      im.heightCm = round1(val);
+      if (im.lockRatio) {
+        im.widthCm = round1(Math.min(im.heightCm * im.ratio, CONTENT_W_CM));
+        im.heightCm = round1(im.widthCm / im.ratio);
+      }
+    }
+    // aggiorna gli altri campi della stessa foto senza ridisegnare l'editor
+    const box = root.closest('.img-item');
+    const q = (f) => box.querySelector(`[data-f="${f}"]`);
+    if (q('iw') !== root) q('iw').value = fmt(im.widthCm);
+    if (q('ih') !== root) q('ih').value = fmt(im.heightCm);
+    if (q('iwr') !== root) q('iwr').value = im.widthCm;
+  }
+
+  $('#editor').addEventListener('input', (e) => {
+    const t = e.target, f = t.dataset.f, { s, p, i, hf } = t.dataset;
+    if (!f) return;
+    switch (f) {
+      case 'st': {
+        const k = t.dataset.k;
+        if (t.type === 'checkbox') state.style[k] = t.checked;
+        else if (t.dataset.num || k === 'lineSpacing') { const n = parseNum(t.value); if (!(n > 0)) return; state.style[k] = n; }
+        else state.style[k] = t.value;
+        state.style.preset = null;
+        document.querySelectorAll('.style-tile.sel').forEach(x => x.classList.remove('sel'));
+        break;
+      }
+      case 'hfenabled': state[hf].enabled = t.checked; renderEditor(); break;
+      case 'hftext': state[hf].text = t.value; break;
+      case 'hfbold': state[hf].boldFirst = t.checked; break;
+      case 'hfline': state[hf].line = t.checked; break;
+      case 'pnenabled': state.pageNumbers.enabled = t.checked; renderEditor(); break;
+      case 'title': state.title = t.value; break;
+      case 'subtitle': state.subtitle = t.value; break;
+      case 'stitle': sec(s).title = t.value; break;
+      case 'ptext': para(s, p).text = t.value; break;
+      case 'iname': img(s, p, i).name = t.value; break;
+      case 'iw': case 'iwr': setSize(imgOf(t.dataset), 'w', t.value, t); break;
+      case 'ih': setSize(imgOf(t.dataset), 'h', t.value, t); break;
+      case 'icap': img(s, p, i).showCaption = t.checked; break;
+      case 'ilock': {
+        const im = imgOf(t.dataset);
+        im.lockRatio = t.checked;
+        if (im.lockRatio) setSize(im, 'w', im.widthCm, t);
+        break;
+      }
+      default: return;
+    }
+    changed();
+  });
+  // Corregge i valori fuori intervallo quando si esce dal campo
+  $('#editor').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset.f === 'iw' || t.dataset.f === 'ih') {
+      const im = imgOf(t.dataset);
+      t.value = fmt(t.dataset.f === 'iw' ? im.widthCm : im.heightCm);
+    }
+  });
+
+  // ---------- Azioni ----------
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const { act, s, p, i, v, hf } = b.dataset;
+    switch (act) {
+      case 'view': setView(v); return;
+      case 'shareDocx': shareDocx(); return;
+      case 'saveDocx': if (lastDocx) download(lastDocx, lastDocx.name); $('#shareModal').classList.remove('open'); return;
+      case 'shareClose': $('#shareModal').classList.remove('open'); return;
+      case 'stylePreset': state.style = newStyle(v); break;
+      case 'stSet': state.style[b.dataset.k] = v; state.style.preset = null; break;
+      case 'hfScope': state[hf].scope = v; break;
+      case 'hfTextAlign': state[hf].textAlign = v; break;
+      case 'hfImgAlign': state[hf].image.align = v; break;
+      case 'hfDelImg': state[hf].image = null; break;
+      case 'hfAddFile': pendingTarget = { hf }; $('#fileImgs').value = ''; $('#fileImgs').click(); return;
+      case 'hfAddLib':
+        if (!library.length) { toast('La libreria è vuota: carica prima una cartella o delle foto.'); return; }
+        pendingTarget = { hf }; openPicker(); return;
+      case 'pnFormat': state.pageNumbers.format = v; break;
+      case 'pnAlign': state.pageNumbers.align = v; break;
+      case 'addSec': state.sections.push(newSection()); break;
+      case 'delSec':
+        if (!confirm('Eliminare questo sottotitolo con tutti i suoi paragrafi?')) return;
+        state.sections = state.sections.filter(x => x.id !== s); break;
+      case 'upSec': move(state.sections, s, -1); break;
+      case 'downSec': move(state.sections, s, 1); break;
+      case 'addPara': sec(s).paragraphs.push(newPara()); break;
+      case 'delPara': {
+        const pa = para(s, p);
+        if ((pa.text || pa.images.length) && !confirm('Eliminare questo paragrafo?')) return;
+        sec(s).paragraphs = sec(s).paragraphs.filter(x => x.id !== p); break;
+      }
+      case 'upPara': move(sec(s).paragraphs, p, -1); break;
+      case 'downPara': move(sec(s).paragraphs, p, 1); break;
+      case 'align': {
+        const im = img(s, p, i);
+        im.align = v;
+        if (v !== 'center' && im.widthCm > CONTENT_W_CM - 4) setSize(im, 'w', CONTENT_W_CM - 4, b);
+        break;
+      }
+      case 'resetSize': { const im = imgOf(b.dataset); im.lockRatio = true; setSize(im, 'w', im.widthCm, b); break; }
+      case 'delImg': para(s, p).images = para(s, p).images.filter(x => x.id !== i); break;
+      case 'upImg': move(para(s, p).images, i, -1); break;
+      case 'downImg': move(para(s, p).images, i, 1); break;
+      case 'addFile': pendingTarget = { s, p }; $('#fileImgs').value = ''; $('#fileImgs').click(); return;
+      case 'addLib':
+        if (!library.length) { toast('La libreria è vuota: carica prima una cartella o delle foto.'); return; }
+        pendingTarget = { s, p }; openPicker(); return;
+      case 'loadFolder': $('#fileFolder').value = ''; $('#fileFolder').click(); return;
+      case 'loadLibFiles': $('#fileLibImgs').value = ''; $('#fileLibImgs').click(); return;
+      case 'clearLib': library = []; renderEditor(); return;
+      case 'modalClose': closePicker(); return;
+      case 'modalOk': {
+        const chosen = library.filter(l => pickSel.has(l.id));
+        closePicker();
+        if (chosen.length) addImagesTo(pendingTarget, chosen);
+        return;
+      }
+      case 'pick': {
+        pickSel.has(v) ? pickSel.delete(v) : pickSel.add(v);
+        b.classList.toggle('sel');
+        $('#pickCount').textContent = pickSel.size ? `${pickSel.size} selezionate` : '';
+        return;
+      }
+      case 'newDoc':
+        if (!confirm('Iniziare un nuovo documento? Il contenuto attuale verrà cancellato.')) return;
+        state = defaultDoc(); break;
+      case 'saveJson': saveJson(); return;
+      case 'wipe': wipeDevice(); return;
+      case 'openJson': $('#fileJson').value = ''; $('#fileJson').click(); return;
+      case 'exportDocx': exportDocx(b); return;
+      default: return;
+    }
+    renderEditor(); changed();
+  });
+
+  $('#editor').addEventListener('toggle', (e) => {
+    if (e.target.dataset?.f === 'stOpen') state.styleOpen = e.target.open;
+  }, true);
+
+  $('#fileImgs').addEventListener('change', async (e) => {
+    const srcs = await processFiles(e.target.files);
+    if (srcs.length && pendingTarget) addImagesTo(pendingTarget, srcs);
+  });
+  async function addToLibrary(files) {
+    toast('Caricamento foto…');
+    const srcs = await processFiles(files);
+    srcs.sort((a, b) => a.name.localeCompare(b.name, 'it', { numeric: true }));
+    srcs.forEach(s => library.push({ id: uid(), ...s }));
+    renderEditor();
+    toast(srcs.length ? `${srcs.length} foto aggiunte alla libreria` : 'Nessuna immagine trovata');
+  }
+  $('#fileFolder').addEventListener('change', (e) => addToLibrary(e.target.files));
+  $('#fileLibImgs').addEventListener('change', (e) => addToLibrary(e.target.files));
+
+  function openPicker() {
+    pickSel = new Set();
+    $('#pickCount').textContent = '';
+    $('#pickGrid').innerHTML = library.map(l =>
+      `<div class="pick" data-act="pick" data-v="${l.id}"><img src="${l.dataUrl}" alt=""><span>${esc(l.name)}</span></div>`).join('');
+    $('#libModal').classList.add('open');
+  }
+  function closePicker() { $('#libModal').classList.remove('open'); }
+  $('#libModal').addEventListener('click', (e) => { if (e.target.id === 'libModal') closePicker(); });
+
+  // ---------- Salva / apri progetto ----------
+  function download(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  const fileBase = () => (state.title || 'documento').replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 80) || 'documento';
+  function saveJson() {
+    download(new Blob([JSON.stringify(state)], { type: 'application/json' }), fileBase() + '.json');
+  }
+  $('#fileJson').addEventListener('change', async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      if (!Array.isArray(data.sections)) throw new Error();
+      state = withDefaults(data); renderEditor(); changed(); toast('Progetto aperto');
+    } catch { toast('File di progetto non valido'); }
+  });
+
+  // ---------- Export Word ----------
+  function dataUrlToBytes(dataUrl) {
+    const bin = atob(dataUrl.split(',')[1]);
+    const out = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) out[k] = bin.charCodeAt(k);
+    return out;
+  }
+  const docxType = (mime) => mime === 'image/png' ? 'png' : mime === 'image/gif' ? 'gif' : 'jpg';
+
+  // Per le foto affiancate al testo il nome viene disegnato sotto la foto (in Word una didascalia
+  // non può "seguire" un'immagine flottante). Per le foto centrate resta testo modificabile.
+  async function floatImageData(im) {
+    if (!(im.showCaption && im.name)) {
+      return { data: dataUrlToBytes(im.dataUrl), type: docxType(im.mime), wCm: im.widthCm, hCm: im.heightCm };
+    }
+    const source = await loadImage(im.dataUrl);
+    const pxW = Math.min(source.naturalWidth, 1600);
+    const pxPerCm = pxW / im.widthCm;
+    const pxH = Math.round(im.heightCm * pxPerCm);
+    const fontPx = 0.32 * pxPerCm, lineH = 0.42 * pxPerCm, pad = 0.15 * pxPerCm;
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+    const capFont = `italic ${fontPx}px ${cssFont(state.style.bodyFont)}`;
+    ctx.font = capFont;
+    const lines = [];
+    let cur = '';
+    for (const w of im.name.split(/\s+/)) {
+      const test = cur ? cur + ' ' + w : w;
+      if (ctx.measureText(test).width > pxW * 0.96 && cur) { lines.push(cur); cur = w; } else cur = test;
+    }
+    if (cur) lines.push(cur);
+    const bandPx = Math.round(pad * 2 + lines.length * lineH);
+    c.width = pxW; c.height = pxH + bandPx;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(source, 0, 0, pxW, pxH);
+    ctx.font = capFont;
+    ctx.fillStyle = '#555'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    lines.forEach((l, k) => ctx.fillText(l, pxW / 2, pxH + pad + lineH * (k + 0.5)));
+    const mime = im.mime === 'image/png' ? 'image/png' : 'image/jpeg';
+    const url = c.toDataURL(mime, 0.92);
+    return { data: dataUrlToBytes(url), type: docxType(mime), wCm: im.widthCm, hCm: im.heightCm + bandPx / pxPerCm };
+  }
+
+  // Carta intestata / piè di pagina: logo accanto al testo (tabella senza bordi) oppure sopra
+  function hfChildren(D, key) {
+    const hf = state[key];
+    if (!hf.enabled || (!hf.text && !hf.image)) return [];
+    const isHead = key === 'letterhead';
+    const AL = { left: D.AlignmentType.LEFT, center: D.AlignmentType.CENTER, right: D.AlignmentType.RIGHT };
+    const textParas = () => hf.text ? hf.text.split('\n').map((l, k) => {
+      const strong = k === 0 && hf.boldFirst;
+      return new D.Paragraph({ alignment: AL[hf.textAlign], spacing: { after: 0 },
+        children: [new D.TextRun({ text: l, bold: strong, size: strong ? 20 : 18, color: strong ? '000000' : '444444' })] });
+    }) : [];
+    const im = hf.image;
+    const imgRun = () => new D.ImageRun({
+      type: docxType(im.mime), data: dataUrlToBytes(im.dataUrl),
+      transformation: { width: Math.round(im.widthCm * 96 / 2.54), height: Math.round(im.heightCm * 96 / 2.54) },
+      altText: { name: 'Logo', title: 'Logo', description: '' },
+    });
+    const out = [];
+    if (im && hf.text && im.align !== 'center') {
+      const total = Math.round(CONTENT_W_CM * 567), imgW = Math.min(total - 1134, Math.round((im.widthCm + 0.5) * 567));
+      const imgCell = new D.TableCell({ width: { size: imgW, type: D.WidthType.DXA }, verticalAlign: D.VerticalAlign.CENTER,
+        children: [new D.Paragraph({ alignment: im.align === 'left' ? D.AlignmentType.LEFT : D.AlignmentType.RIGHT, children: [imgRun()] })] });
+      const txtCell = new D.TableCell({ width: { size: total - imgW, type: D.WidthType.DXA }, verticalAlign: D.VerticalAlign.CENTER, children: textParas() });
+      const left = im.align === 'left';
+      out.push(new D.Table({
+        width: { size: total, type: D.WidthType.DXA }, layout: D.TableLayoutType.FIXED, borders: D.TableBorders.NONE,
+        columnWidths: left ? [imgW, total - imgW] : [total - imgW, imgW],
+        rows: [new D.TableRow({ children: left ? [imgCell, txtCell] : [txtCell, imgCell] })],
+      }));
+    } else {
+      if (im) out.push(new D.Paragraph({ alignment: AL[im.align], spacing: { after: hf.text ? 80 : 0 }, children: [imgRun()] }));
+      out.push(...textParas());
+    }
+    if (hf.line) {
+      const b = { style: D.BorderStyle.SINGLE, size: 6, color: '888888', space: 1 };
+      const line = new D.Paragraph({ border: isHead ? { bottom: b } : { top: b }, spacing: { before: 0, after: 0, line: 100, lineRule: D.LineRuleType.EXACT }, children: [] });
+      isHead ? out.push(line) : out.unshift(line);
+    }
+    return out;
+  }
+  function pageNumberChildren(D) {
+    const pn = state.pageNumbers;
+    if (!pn.enabled) return [];
+    const C = D.PageNumber.CURRENT, T = D.PageNumber.TOTAL_PAGES;
+    const parts = { 'n': [C], 'pagina': ['Pagina ', C], 'pagina-di': ['Pagina ', C, ' di ', T], 'n-di': [C, ' / ', T] }[pn.format];
+    const AL = { left: D.AlignmentType.LEFT, center: D.AlignmentType.CENTER, right: D.AlignmentType.RIGHT };
+    return [new D.Paragraph({ alignment: AL[pn.align], spacing: { before: 80 }, children: [new D.TextRun({ size: 18, color: '444444', children: parts })] })];
+  }
+
+  async function exportDocx(btn) {
+    const D = window.docx;
+    if (!D) { toast('Libreria Word non disponibile: verifica che docx.umd.js sia nella stessa cartella o la connessione internet.'); return; }
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Creazione in corso…';
+    try {
+      const CM_PX = 96 / 2.54, CM_EMU = 360000;
+      const GAP_CM = 0.3, SIDE_GAP_CM = 0.4;
+      const st = state.style, hex = (c) => c.replace('#', '');
+      const AL = { left: D.AlignmentType.LEFT, center: D.AlignmentType.CENTER, right: D.AlignmentType.RIGHT, justify: D.AlignmentType.JUSTIFIED };
+      const LINE_CM = st.bodySize * 0.0353 * 1.22 * st.lineSpacing;   // altezza stimata di una riga
+      const CHARS_PER_CM = 26 / st.bodySize;                          // caratteri stimati per cm di riga
+      const AFTER_CM = 200 / 567;                                     // spazio dopo ogni paragrafo
+      const children = [];   // oggetti docx oppure { para, runs } costruiti alla fine
+
+      // Interruzione "a capo dopo le immagini": il testo successivo riparte sotto le foto affiancate
+      const clearRun = () => {
+        const r = new D.TextRun({});
+        r.root.push(new D.BuilderElement({ name: 'w:br', attributes: {
+          type: { key: 'w:type', value: 'textWrapping' }, clear: { key: 'w:clear', value: 'all' } } }));
+        return r;
+      };
+
+      if (state.title) children.push(new D.Paragraph({ heading: D.HeadingLevel.TITLE, children: [new D.TextRun(state.title)] }));
+      if (state.subtitle) children.push(new D.Paragraph({
+        alignment: AL[st.titleAlign], spacing: { after: 360 },
+        children: [new D.TextRun({ text: state.subtitle, italics: true, size: 26, color: '555555', font: st.headFont })],
+      }));
+
+      for (const s of state.sections) {
+        if (s.title) children.push(new D.Paragraph({ heading: D.HeadingLevel.HEADING_1, children: [new D.TextRun(s.title)] }));
+
+        // open = foto a sinistra/destra ancora affiancate al testo: cm che restano da "coprire" per lato
+        let open = null, lastBlock = null;
+        let carry = [];   // foto di un paragrafo senza testo: vengono ancorate al paragrafo successivo
+        const closeFloats = () => {
+          if (open) {
+            if (lastBlock) lastBlock.runs.push(clearRun());
+            else children.push({ para: {}, runs: [clearRun()] });
+          }
+          open = null;
+        };
+
+        for (const p of s.paragraphs) {
+          if (!p.text && !p.images.length) continue;
+          const floats = p.images.filter(i => i.align !== 'center');
+          const centers = p.images.filter(i => i.align === 'center');
+
+          // Foto a sinistra/destra: ancorate al paragrafo, il testo (anche dei paragrafi seguenti) scorre accanto
+          const runs = [];
+          if (floats.length) {
+            open = open || { left: 0, right: 0, wl: 0, wr: 0 };
+            const stack = { left: Math.max(0, open.left), right: Math.max(0, open.right) };
+            for (const im of floats) {
+              const d = await floatImageData(im);
+              const side = im.align;
+              runs.push(new D.ImageRun({
+                type: d.type, data: d.data,
+                transformation: { width: Math.round(d.wCm * CM_PX), height: Math.round(d.hCm * CM_PX) },
+                altText: { name: im.name || 'Foto', title: im.name || 'Foto', description: im.name || '' },
+                floating: {
+                  allowOverlap: false,
+                  horizontalPosition: { relative: D.HorizontalPositionRelativeFrom.MARGIN, align: side === 'left' ? D.HorizontalPositionAlign.LEFT : D.HorizontalPositionAlign.RIGHT },
+                  verticalPosition: { relative: D.VerticalPositionRelativeFrom.PARAGRAPH, offset: Math.round(stack[side] * CM_EMU) },
+                  wrap: { type: D.TextWrappingType.SQUARE, side: side === 'left' ? D.TextWrappingSide.RIGHT : D.TextWrappingSide.LEFT },
+                  margins: {
+                    left: side === 'right' ? SIDE_GAP_CM * CM_EMU : 0, right: side === 'left' ? SIDE_GAP_CM * CM_EMU : 0,
+                    top: 0, bottom: GAP_CM * CM_EMU,
+                  },
+                },
+              }));
+              stack[side] += d.hCm + GAP_CM;
+              if (side === 'left') open.wl = Math.max(open.wl, d.wCm + SIDE_GAP_CM);
+              else open.wr = Math.max(open.wr, d.wCm + SIDE_GAP_CM);
+            }
+            open.left = stack.left; open.right = stack.right;
+          }
+
+          if (!p.text && !centers.length) { carry.push(...runs); continue; }
+
+          const textLines = p.text.split('\n');
+          const textRuns = textLines.map((l, k) => new D.TextRun({ text: l, break: k > 0 ? 1 : 0 }));
+          const block = { para: { alignment: AL[st.align], spacing: { after: 200 } }, runs: [...carry, ...runs, ...textRuns] };
+          carry = [];
+          children.push(block);
+          lastBlock = block;
+
+          // Stima quanto testo scorre accanto alle foto; quando le ha superate non serve più andare a capo
+          if (open) {
+            const availCm = Math.max(3, CONTENT_W_CM - (open.left > 0 ? open.wl : 0) - (open.right > 0 ? open.wr : 0));
+            const lines = textLines.reduce((n, l) => n + Math.max(1, Math.ceil(l.length / (availCm * CHARS_PER_CM))), 0);
+            const usedCm = lines * LINE_CM + AFTER_CM;
+            open.left -= usedCm; open.right -= usedCm;
+            if (Math.max(open.left, open.right) < -LINE_CM) open = null;
+          }
+
+          // Foto centrate: sotto il testo (e sotto le foto affiancate), con didascalia modificabile
+          if (centers.length) closeFloats();
+          for (const im of centers) {
+            children.push(new D.Paragraph({
+              alignment: D.AlignmentType.CENTER, spacing: { before: 120, after: im.showCaption && im.name ? 40 : 200 }, keepNext: true,
+              children: [new D.ImageRun({
+                type: docxType(im.mime), data: dataUrlToBytes(im.dataUrl),
+                transformation: { width: Math.round(im.widthCm * CM_PX), height: Math.round(im.heightCm * CM_PX) },
+                altText: { name: im.name || 'Foto', title: im.name || 'Foto', description: im.name || '' },
+              })],
+            }));
+            if (im.showCaption && im.name) children.push(new D.Paragraph({
+              alignment: D.AlignmentType.CENTER, spacing: { after: 240 },
+              children: [new D.TextRun({ text: im.name, italics: true, size: 18, color: '555555' })],
+            }));
+          }
+          if (centers.length) lastBlock = null;
+        }
+        if (carry.length) { lastBlock = { para: { spacing: { after: 200 } }, runs: carry }; children.push(lastBlock); }
+        closeFloats();
+      }
+      const body = children.map(c => c.runs ? new D.Paragraph({ ...c.para, children: c.runs }) : c);
+
+      const orEmpty = (arr) => arr.length ? arr : [new D.Paragraph('')];
+      const doc = new D.Document({
+        creator: 'Editor Documenti',
+        // le righe andate a capo con Invio non vengono "stirate" nel testo giustificato
+        compatibility: { doNotExpandShiftReturn: true },
+        title: state.title || 'Documento',
+        styles: { default: {
+          document: { run: { font: st.bodyFont, size: Math.round(st.bodySize * 2) }, paragraph: { spacing: { line: Math.round(st.lineSpacing * 240) } } },
+          title: {
+            run: { font: st.headFont, size: st.titleSize * 2, color: hex(st.titleColor), bold: st.titleCaps, allCaps: st.titleCaps },
+            paragraph: { alignment: AL[st.titleAlign], spacing: { after: 80, line: 240 } },
+          },
+          heading1: {
+            run: { font: st.headFont, size: st.h1Size * 2, color: hex(st.accent), bold: st.headBold },
+            paragraph: { spacing: { before: 360, after: 120, line: 240 }, keepNext: true,
+              border: st.headLine ? { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: hex(st.accent), space: 2 } } : undefined },
+          },
+        } },
+        sections: [{
+          properties: {
+            titlePage: true,   // prima pagina con intestazione/piè propri
+            page: { size: { width: 11906, height: 16838 }, margin: { top: 1134, bottom: 1134, left: 1134, right: 1134, header: 567, footer: 567 } },
+          },
+          headers: {
+            first: new D.Header({ children: orEmpty(hfChildren(D, 'letterhead')) }),
+            default: new D.Header({ children: orEmpty(state.letterhead.scope === 'all' ? hfChildren(D, 'letterhead') : []) }),
+          },
+          footers: {
+            first: new D.Footer({ children: orEmpty([...hfChildren(D, 'footer'), ...pageNumberChildren(D)]) }),
+            default: new D.Footer({ children: orEmpty([...(state.footer.scope === 'all' ? hfChildren(D, 'footer') : []), ...pageNumberChildren(D)]) }),
+          },
+          children: body.length ? body : [new D.Paragraph('')],
+        }],
+      });
+      const blob = await D.Packer.toBlob(doc);
+      const name = fileBase() + '.docx';
+      if (IS_IOS) {
+        // su iPhone/iPad si sceglie se condividerlo (es. aprirlo in Word) o salvarlo in File
+        lastDocx = new File([blob], name, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        $('#shareModal').classList.add('open');
+      } else {
+        download(blob, name);
+        toast('Documento Word scaricato');
+      }
+    } catch (err) {
+      console.error(err);
+      toast('Errore nella creazione del file Word: ' + err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = label;
+    }
+  }
+
+  // ---------- Cancellazione dei dati dal dispositivo ----------
+  function wipeDevice() {
+    if (!confirm('Cancellare il documento, le foto e la libreria memorizzati in questo browser?\n\n'
+      + 'Tutto ciò che non hai salvato con "Salva progetto" o scaricato in Word andrà perso.')) return;
+    clearTimeout(saveTimer);                       // evita che un salvataggio in sospeso riscriva i dati
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+    state = defaultDoc();
+    library = [];
+    lastDocx = null;
+    pendingTarget = null;
+    ['#fileImgs', '#fileFolder', '#fileLibImgs', '#fileJson'].forEach(sel => { $(sel).value = ''; });
+    document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
+    renderEditor();
+    renderPreview();                               // senza salvare: la memoria del browser resta vuota
+    toast('Documento cancellato da questo dispositivo');
+  }
+
+  // ---------- iPhone / iPad ----------
+  let lastDocx = null;
+  async function shareDocx() {
+    if (!lastDocx) return;
+    if (navigator.canShare && navigator.canShare({ files: [lastDocx] })) {
+      try { await navigator.share({ files: [lastDocx], title: lastDocx.name }); $('#shareModal').classList.remove('open'); }
+      catch (err) { if (err.name !== 'AbortError') toast('Condivisione non riuscita: usa "Salva in File".'); }
+    } else {
+      toast('Condivisione non disponibile: usa "Salva in File".');
+    }
+  }
+  function setView(v) {
+    document.body.dataset.view = v;
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    if (v === 'preview') fitPreview();
+    window.scrollTo(0, 0);
+  }
+  document.body.dataset.view = 'edit';
+  $('#shareModal').addEventListener('click', (e) => { if (e.target.id === 'shareModal') e.target.classList.remove('open'); });
+
+  // ---------- Varie ----------
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+  }
+
+  renderEditor();
+  renderPreview();
+})();
+</script>
+</body>
+</html>
