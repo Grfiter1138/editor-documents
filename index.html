@@ -454,6 +454,8 @@
     const ev = s.event, a = `data-s="${s.id}"`;
     const head = `<div class="row" style="margin-top:8px">
         <label class="hint"><input type="checkbox" data-f="evOn" ${a} ${ev.enabled ? 'checked' : ''}> 📅 Crea un evento o un promemoria</label>
+        <span class="grow"></span>
+        <button class="small" data-act="mail" ${a} title="Apre una nuova mail: oggetto = sottotitolo, testo = paragrafi">✉️ Crea mail</button>
       </div>`;
     if (!ev.enabled) return head;
     const isRem = ev.kind === 'promemoria';
@@ -890,6 +892,7 @@
       case 'wipe': wipeDevice(); return;
       case 'evExport': exportEvent(sec(s)); return;
       case 'evAdd': addEvent(sec(s)); return;
+      case 'mail': createMail(sec(s)); return;
       case 'evKind': sec(s).event.kind = v; break;
       case 'openJson': $('#fileJson').value = ''; $('#fileJson').click(); return;
       case 'exportDocx': exportDocx(b); return;
@@ -1299,8 +1302,21 @@
     const a = document.createElement('a');
     a.href = 'editordocumenti://aggiungi?' + q.toString().replace(/\+/g, '%20');
     document.body.appendChild(a); a.click(); a.remove();
-    toast(isRem ? 'Invio a Promemoria… conferma nella finestra che compare'
-                : 'Invio a Calendario… conferma nella finestra che compare');
+    toast(isRem ? 'Invio a Promemoria… scegli la lista nella finestra che compare'
+                : 'Invio a Calendario… scegli il calendario nella finestra che compare');
+  }
+
+  // Nuova mail nell'app di posta predefinita (Mail, Outlook…): oggetto = sottotitolo, testo = paragrafi
+  function createMail(s) {
+    const subject = s.title.trim();
+    if (!subject) { toast('Scrivi il sottotitolo: sarà l\'oggetto della mail'); return; }
+    const body = s.paragraphs.map(p => p.text.trim()).filter(Boolean).join('\n\n');
+    const enc = (t) => encodeURIComponent(t.replace(/\r?\n/g, '\r\n'));
+    const a = document.createElement('a');
+    a.href = `mailto:?subject=${enc(subject)}&body=${enc(body)}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    const hasPhotos = s.paragraphs.some(p => p.images.length);
+    toast(hasPhotos ? 'Mail aperta. Le foto non vengono allegate in automatico.' : 'Mail aperta nell\'app di posta');
   }
 
   function exportEvent(s) {
