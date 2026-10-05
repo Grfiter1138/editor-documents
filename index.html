@@ -237,6 +237,7 @@
         <button data-act="saveDocx">Salva in File</button>
         <button data-act="shareClose">Chiudi</button>
       </div>
+      <div class="hint" style="margin-top:10px">Se Word non compare: cercalo in fondo a "Altro", oppure usa "Salva in File", poi apri il documento dall'app File e scegli Word.</div>
     </div>
   </div>
 </div>
@@ -260,8 +261,8 @@
   // iPhone / iPad (anche iPad che si presenta come Mac)
   const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-  const newPara = () => ({ id: uid(), text: '', images: [] });
   const newEvent = () => ({ enabled: false, kind: 'evento', date: '', time: '', includeText: false, alert: '15' });
+  const newPara = () => ({ id: uid(), text: '', images: [], event: newEvent() });
   const newSection = () => ({ id: uid(), title: '', paragraphs: [newPara()], event: newEvent() });
   const newToc = () => ({ enabled: false, title: 'Indice' });
   const newHF = () => ({ enabled: false, scope: 'all', text: '', textAlign: 'center', boldFirst: true, line: true, image: null });
@@ -273,7 +274,10 @@
   // Completa i progetti salvati con versioni precedenti del programma
   function withDefaults(d) {
     d.toc = { ...newToc(), ...(d.toc || {}) };
-    (d.sections || []).forEach(sec => { sec.event = { ...newEvent(), ...(sec.event || {}) }; });
+    (d.sections || []).forEach(sec => {
+      sec.event = { ...newEvent(), ...(sec.event || {}) };
+      (sec.paragraphs || []).forEach(pa => { pa.event = { ...newEvent(), ...(pa.event || {}) }; });
+    });
     d.letterhead = { ...newHF(), ...(d.letterhead || {}) };
     d.footer = { ...newHF(), ...(d.footer || {}) };
     d.pageNumbers = { ...newPageNumbers(), ...(d.pageNumbers || {}) };
@@ -328,6 +332,15 @@
   const img = (s, p, i) => para(s, p)?.images.find(x => x.id === i);
   // Immagine indicata dai data-attribute di un controllo (foto di paragrafo o logo di intestazione/piè)
   const imgOf = (ds) => ds.hf ? state[ds.hf].image : img(ds.s, ds.p, ds.i);
+  // Evento/mail di un sottotitolo (tutti i suoi paragrafi) o di un singolo paragrafo (solo il suo testo)
+  function evTarget({ s, p }) {
+    const se = sec(s), pa = p ? para(s, p) : null, owner = pa || se;
+    return { id: owner.id, ev: owner.event, title: se.title.trim(), paras: pa ? [pa] : se.paragraphs, single: !!pa };
+  }
+  function refreshEvMsg(ds) {
+    const msg = document.getElementById('evmsg-' + (ds.p || ds.s));
+    if (msg) msg.textContent = eventProblem(evTarget(ds)) || '';
+  }
   function move(arr, id, dir) {
     const i = arr.findIndex(x => x.id === id), j = i + dir;
     if (i < 0 || j < 0 || j >= arr.length) return;
@@ -450,12 +463,13 @@
     </div>`;
   }
 
-  function eventBox(s) {
-    const ev = s.event, a = `data-s="${s.id}"`;
+  // Con p: evento/mail del solo paragrafo; senza: del sottotitolo con tutti i suoi paragrafi
+  function eventBox(s, p) {
+    const owner = p || s, ev = owner.event, a = `data-s="${s.id}"` + (p ? ` data-p="${p.id}"` : '');
     const head = `<div class="row" style="margin-top:8px">
-        <label class="hint"><input type="checkbox" data-f="evOn" ${a} ${ev.enabled ? 'checked' : ''}> 📅 Crea un evento o un promemoria</label>
+        <label class="hint"><input type="checkbox" data-f="evOn" ${a} ${ev.enabled ? 'checked' : ''}> 📅 Crea un evento o un promemoria${p ? ' da questo paragrafo' : ''}</label>
         <span class="grow"></span>
-        <button class="small" data-act="mail" ${a} title="Apre una nuova mail: oggetto = sottotitolo, testo = paragrafi">✉️ Crea mail</button>
+        <button class="small" data-act="mail" ${a} title="Apre una nuova mail: oggetto = sottotitolo, testo = ${p ? 'questo paragrafo' : 'tutti i paragrafi'}">✉️ Crea mail</button>
       </div>`;
     if (!ev.enabled) return head;
     const isRem = ev.kind === 'promemoria';
@@ -473,12 +487,12 @@
         </select></label>
       </div>
       <div class="row">
-        <label class="hint"><input type="checkbox" data-f="evText" ${a} ${ev.includeText ? 'checked' : ''}> Riporta il testo dei paragrafi nelle note ${isRem ? 'del promemoria' : "dell'evento"}</label>
+        <label class="hint"><input type="checkbox" data-f="evText" ${a} ${ev.includeText ? 'checked' : ''}> Riporta il testo ${p ? 'del paragrafo' : 'dei paragrafi'} nelle note ${isRem ? 'del promemoria' : "dell'evento"}</label>
       </div>
       <div class="row">
         <button class="small primary" data-act="evAdd" ${a}>${isRem ? '🔔 Aggiungi ai Promemoria' : '📅 Aggiungi al Calendario'}</button>
         ${!isRem && !IS_IOS ? `<button class="small" data-act="evExport" ${a} title="Per aggiungerlo da un altro computer o telefono">Scarica file .ics</button>` : ''}
-        <span class="hint ev-msg" id="evmsg-${s.id}">${esc(eventProblem(s) || '')}</span>
+        <span class="hint ev-msg" id="evmsg-${owner.id}">${esc(eventProblem(evTarget({ s: s.id, p: p?.id })) || '')}</span>
       </div>${remNote}
     </div>`;
   }
@@ -589,7 +603,8 @@
             <button class="icon" data-act="downPara" data-s="${s.id}" data-p="${p.id}" title="Sposta giù">↓</button>
             <button class="icon danger" data-act="delPara" data-s="${s.id}" data-p="${p.id}" title="Elimina paragrafo">✕</button>
           </div>
-          <textarea data-f="ptext" data-s="${s.id}" data-p="${p.id}" placeholder="Scrivi il testo del paragrafo…">${esc(p.text)}</textarea>`);
+          <textarea data-f="ptext" data-s="${s.id}" data-p="${p.id}" placeholder="Scrivi il testo del paragrafo…">${esc(p.text)}</textarea>
+          ${eventBox(s, p)}`);
 
         p.images.forEach(im => {
           const ids = `data-s="${s.id}" data-p="${p.id}" data-i="${im.id}"`;
@@ -768,22 +783,21 @@
       case 'subtitle': state.subtitle = t.value; break;
       case 'stitle': {
         sec(s).title = t.value;
-        const msg = document.getElementById('evmsg-' + s);
-        if (msg) msg.textContent = eventProblem(sec(s)) || '';
+        refreshEvMsg({ s });
+        sec(s).paragraphs.forEach(pa => refreshEvMsg({ s, p: pa.id }));
         break;
       }
       case 'tocOn': state.toc.enabled = t.checked; renderEditor(); break;
       case 'tocTitle': state.toc.title = t.value; break;
-      case 'evOn': sec(s).event.enabled = t.checked; renderEditor(); break;
-      case 'evText': sec(s).event.includeText = t.checked; break;
-      case 'evAlert': sec(s).event.alert = t.value; break;
+      case 'evOn': evTarget(t.dataset).ev.enabled = t.checked; renderEditor(); break;
+      case 'evText': evTarget(t.dataset).ev.includeText = t.checked; break;
+      case 'evAlert': evTarget(t.dataset).ev.alert = t.value; break;
       case 'evDate': case 'evTime': {
         const isDate = f === 'evDate';
         const v = isDate ? maskDate(t.value) : maskTime(t.value);
         if (v !== t.value) t.value = v;
-        sec(s).event[isDate ? 'date' : 'time'] = v;
-        const msg = document.getElementById('evmsg-' + s);
-        if (msg) msg.textContent = eventProblem(sec(s)) || '';
+        evTarget(t.dataset).ev[isDate ? 'date' : 'time'] = v;
+        refreshEvMsg(t.dataset);
         break;
       }
       case 'ptext': para(s, p).text = t.value; break;
@@ -805,11 +819,11 @@
   $('#editor').addEventListener('change', (e) => {
     const t = e.target;
     if (t.dataset.f === 'evDate' || t.dataset.f === 'evTime') {
-      const ev = sec(t.dataset.s).event, isDate = t.dataset.f === 'evDate';
+      const ev = evTarget(t.dataset).ev, isDate = t.dataset.f === 'evDate';
       const v = isDate ? padDate(t.value) : padTime(t.value);
       if (v !== t.value) {
         t.value = v; ev[isDate ? 'date' : 'time'] = v;
-        document.getElementById('evmsg-' + t.dataset.s).textContent = eventProblem(sec(t.dataset.s)) || '';
+        refreshEvMsg(t.dataset);
         saveLocal();
       }
     }
@@ -890,10 +904,10 @@
         state = defaultDoc(); break;
       case 'saveJson': saveJson(); return;
       case 'wipe': wipeDevice(); return;
-      case 'evExport': exportEvent(sec(s)); return;
-      case 'evAdd': addEvent(sec(s)); return;
-      case 'mail': createMail(sec(s)); return;
-      case 'evKind': sec(s).event.kind = v; break;
+      case 'evExport': exportEvent(evTarget(b.dataset)); return;
+      case 'evAdd': addEvent(evTarget(b.dataset)); return;
+      case 'mail': createMail(evTarget(b.dataset)); return;
+      case 'evKind': evTarget(b.dataset).ev.kind = v; break;
       case 'openJson': $('#fileJson').value = ''; $('#fileJson').click(); return;
       case 'exportDocx': exportDocx(b); return;
       default: return;
@@ -1260,13 +1274,14 @@
     if (dt.getFullYear() !== yy || dt.getMonth() !== mm - 1 || dt.getDate() !== dd || hh > 23 || mi > 59) return null;
     return dt;
   }
-  function eventProblem(s) {
-    const ev = s.event;
+  // t = evTarget(): evento di un sottotitolo o di un singolo paragrafo
+  function eventProblem(t) {
+    const ev = t.ev;
     if (!ev.date && !ev.time) return 'Inserisci data e ora';
     if (!/^\d{2}\/\d{2}\/\d{4}$/.test(ev.date)) return 'Data nel formato gg/mm/aaaa';
     if (!/^\d{2}:\d{2}$/.test(ev.time)) return 'Ora nel formato 00:00';
     if (!parseEventDate(ev)) return 'Data o ora non valida';
-    if (!s.title.trim()) return 'Scrivi il sottotitolo: sarà il nome ' + (ev.kind === 'promemoria' ? 'del promemoria' : 'dell\'evento');
+    if (!t.title) return 'Scrivi il sottotitolo: sarà il nome ' + (ev.kind === 'promemoria' ? 'del promemoria' : 'dell\'evento');
     return '';
   }
   // Testo per il formato iCalendar: caratteri speciali protetti e righe lunghe spezzate a 75 byte
@@ -1286,17 +1301,18 @@
   // Sul Mac passa i dati a Editor Documenti.app (link editordocumenti://), che crea
   // l'evento nel calendario di default o il promemoria nella lista di default.
   // Su iPhone/iPad gli eventi passano dal file .ics, che il sistema propone di aggiungere.
-  function addEvent(s) {
-    const problem = eventProblem(s);
+  const eventNotes = (t) => t.ev.includeText ? t.paras.map(p => p.text.trim()).filter(Boolean).join('\n\n') : '';
+  function addEvent(t) {
+    const problem = eventProblem(t);
     if (problem) { toast(problem); return; }
-    const ev = s.event, isRem = ev.kind === 'promemoria';
+    const ev = t.ev, isRem = ev.kind === 'promemoria';
     if (IS_IOS) {
       if (isRem) { toast('Il promemoria si può creare solo sul Mac'); return; }
-      exportEvent(s); return;
+      exportEvent(t); return;
     }
     const [dd, mm, yy] = ev.date.split('/');
-    const notes = ev.includeText ? s.paragraphs.map(p => p.text.trim()).filter(Boolean).join('\n\n') : '';
-    const q = new URLSearchParams({ tipo: ev.kind, titolo: s.title.trim(), inizio: `${yy}-${mm}-${dd}T${ev.time}` });
+    const notes = eventNotes(t);
+    const q = new URLSearchParams({ tipo: ev.kind, titolo: t.title, inizio: `${yy}-${mm}-${dd}T${ev.time}` });
     if (notes) q.set('note', notes);
     if (ev.alert !== 'none') q.set('avviso', ev.alert);
     const a = document.createElement('a');
@@ -1306,42 +1322,43 @@
                 : 'Invio a Calendario… scegli il calendario nella finestra che compare');
   }
 
-  // Nuova mail nell'app di posta predefinita (Mail, Outlook…): oggetto = sottotitolo, testo = paragrafi
-  function createMail(s) {
-    const subject = s.title.trim();
+  // Nuova mail nell'app di posta predefinita (Mail, Outlook…): oggetto = sottotitolo,
+  // testo = tutti i paragrafi del sottotitolo oppure solo il paragrafo scelto
+  function createMail(t) {
+    const subject = t.title;
     if (!subject) { toast('Scrivi il sottotitolo: sarà l\'oggetto della mail'); return; }
-    const body = s.paragraphs.map(p => p.text.trim()).filter(Boolean).join('\n\n');
+    const body = t.paras.map(p => p.text.trim()).filter(Boolean).join('\n\n');
     const enc = (t) => encodeURIComponent(t.replace(/\r?\n/g, '\r\n'));
     const a = document.createElement('a');
     a.href = `mailto:?subject=${enc(subject)}&body=${enc(body)}`;
     document.body.appendChild(a); a.click(); a.remove();
-    const hasPhotos = s.paragraphs.some(p => p.images.length);
+    const hasPhotos = t.paras.some(p => p.images.length);
     toast(hasPhotos ? 'Mail aperta. Le foto non vengono allegate in automatico.' : 'Mail aperta nell\'app di posta');
   }
 
-  function exportEvent(s) {
-    const problem = eventProblem(s);
+  function exportEvent(t) {
+    const problem = eventProblem(t);
     if (problem) { toast(problem); return; }
-    const ev = s.event, start = parseEventDate(ev), end = new Date(start.getTime() + 60 * 60 * 1000);
+    const ev = t.ev, start = parseEventDate(ev), end = new Date(start.getTime() + 60 * 60 * 1000);
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
-    const notes = ev.includeText ? s.paragraphs.map(p => p.text.trim()).filter(Boolean).join('\n\n') : '';
+    const notes = eventNotes(t);
     const lines = [
       'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Editor Documenti//IT', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
       'BEGIN:VEVENT',
-      `UID:${s.id}-${Date.now()}@editor-documenti`,
+      `UID:${t.id}-${Date.now()}@editor-documenti`,
       `DTSTAMP:${stamp}`,
       `DTSTART:${icsDate(start)}`,           // ora locale del dispositivo
       `DTEND:${icsDate(end)}`,
-      `SUMMARY:${icsEscape(s.title.trim())}`,
+      `SUMMARY:${icsEscape(t.title)}`,
     ];
     if (notes) lines.push(`DESCRIPTION:${icsEscape(notes)}`);
     if (ev.alert !== 'none') {
-      lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(s.title.trim())}`,
+      lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(t.title)}`,
         `TRIGGER:${ev.alert === '0' ? 'PT0M' : '-PT' + ev.alert + 'M'}`, 'END:VALARM');
     }
     lines.push('END:VEVENT', 'END:VCALENDAR');
     const ics = lines.map(icsFold).join('\r\n') + '\r\n';
-    const name = (s.title.trim().replace(/[\\/:*?"<>|]+/g, '').slice(0, 60) || 'evento') + '.ics';
+    const name = (t.title.replace(/[\\/:*?"<>|]+/g, '').slice(0, 60) || 'evento') + '.ics';
     download(new Blob([ics], { type: 'text/calendar;charset=utf-8' }), name);
     toast(IS_IOS ? 'Apri il file per aggiungerlo al Calendario' : 'Evento scaricato: aprilo per aggiungerlo al Calendario');
   }
@@ -1368,7 +1385,8 @@
   async function shareDocx() {
     if (!lastDocx) return;
     if (navigator.canShare && navigator.canShare({ files: [lastDocx] })) {
-      try { await navigator.share({ files: [lastDocx], title: lastDocx.name }); $('#shareModal').classList.remove('open'); }
+      // Solo il file, senza titolo: con un testo in più iOS nasconde app come Word dal menu Condividi
+      try { await navigator.share({ files: [lastDocx] }); $('#shareModal').classList.remove('open'); }
       catch (err) { if (err.name !== 'AbortError') toast('Condivisione non riuscita: usa "Salva in File".'); }
     } else {
       toast('Condivisione non disponibile: usa "Salva in File".');
